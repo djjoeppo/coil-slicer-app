@@ -68,3 +68,25 @@ Dit document bevat het overzicht van voorgestelde verbeterpunten met de status p
 ### 3.3 Pauze / Hervat knop op Device tab
 * **Status:** Afgewezen.
 * **Toelichting:** Niet van toepassing omdat de hardware/machine zelf daar momenteel nog niet ver genoeg voor is ontwikkeld.
+
+---
+
+## 4. Extra Inzichten & Viewer Functies
+
+### 4.1 Camera Reset / Home Knop met Automatische Zoom op Spoelgrootte
+* **Status:** Goedgekeurd.
+* **Actie:**
+  * Een **"Reset Camera / Fit to Screen"** knop toevoegen in de hoek van de 3D viewport.
+  * Bij het klikken wordt niet alleen de camerahoek gereset, maar berekent de viewer ook **automatisch de ideale zoomafstand (distance)** op basis van de maximale flensdiameter en breedte van de specifieke spoel, zodat elke spoel (klein of heel groot) altijd perfect gecentreerd en beeldschermvullend in beeld staat!
+
+### 4.2 G-Code Zoek- & Markeerfunctie in Terminal
+* **Status:** Afgewezen voor huidig stadium.
+* **Toelichting:** Geen prioriteit voor de gebruiker in deze fase.
+
+### 4.3 Onthouden van Laatst Gebruikte Instellingen (Settings Persistence)
+* **Status:** Goedgekeurd.
+* **Actie:** Een `user_config.json` bestand implementeren dat automatisch de laatst gekozen taal (NL/EN), eenheden (`mm`/`inch`), thema (Dark/Light) en gekozen machine-limieten opslaat en bij de volgende opstart van de applicatie herstelt.
+
+### 4.4 Automatische Herverbinding bij Seriële Disconnect
+* **Status:** Afgewezen.
+* **Toelichting:** Niet nodig in deze fase van de ontwikkeling.
