@@ -36,9 +36,14 @@ Dit document bevat het overzicht van voorgestelde verbeterpunten met de status p
 * **Status:** Goedgekeurd.
 * **Actie:** Direct visuele feedback tonen (bijv. een subtiele rode rand rond het invoerveld) bij ongeldige of onmogelijke invoer (zoals een gat-diameter die groter is dan de kern-diameter).
 
-### 2.3 Presets voor Spoelen (Opslaan & Selecteren)
-* **Status:** In afwachting van verduidelijking (Toelichting gegeven).
-* **Toelichting:** Ja, dit houdt in dat de gebruiker eigen spoelafmetingen (kern, gat, flens, breedte) kan opslaan onder een eigen naam (bijv. *"Mijn Luidspreker Spoel A"*) en deze via een dropdown-menu snel kan herladen, aangevuld met een paar ingebouwde standaardmaten.
+### 2.3 Visuele Spoel Presets (Pop-up met Fotopreview)
+* **Status:** Goedgekeurd.
+* **Actie & Vormgeving:**
+  * In plaats van een simpele dropdown komt er een **Pop-up Venster** (vergelijkbaar met de materialenmanager, maar dan visueel mooier ingericht met spoelkaarten/thumbnails).
+  * Elke opgeslagen spoel krijgt een visuele kaart met:
+    * Een thumbnail/foto of 3D-weergave van het type spoel.
+    * Naam en afmetingen (Kern-Ø, Gat-Ø, Flens-Ø, Breedte).
+    * Knoppen voor *"Opslaan als nieuwe preset"*, *"Selecteren"* en *"Verwijderen"*.
 
 ### 2.4 Tooltips & Begrippen
 * **Status:** Afgewezen voor huidig stadium.
@@ -52,10 +57,13 @@ Dit document bevat het overzicht van voorgestelde verbeterpunten met de status p
 * **Status:** Afgewezen.
 * **Toelichting:** Niet gewenst omdat specifieke G-code instellingen (draadspanning, offsets, etc.) eerst handmatig ingesteld moeten worden door de gebruiker.
 
-### 3.2 Performance bij hele lange wikkeldraden (Uitleg & Optie)
-* **Status:** Ter verduidelijking uitgelegd.
-* **Uitleg:** Bij spoelen met duizenden wikkelingen heeft het 3D-model meer dan 100.000 punten. Als de gebruiker aan de tijdlijnschuifbalk sleept op de Preview-tab, wordt bij elke millimeter beweging de 3D mesh opnieuw opgebouwd.
-* **Voorgestelde Oplossing:** Tijdens het slepen van de tijdlijn een tijdelijk vereenvoudigd model tonen (Level of Detail) of de mesh pas bijwerken na een kleine pauze (throttling op max. 30 fps), zodat de schuifbalk 100% soepel blijft bewegen.
+### 3.2 Caching, Bevriezen Voorkomen & G-Code Simulatie
+* **Status:** Goedgekeurd.
+* **Oplossingen voor de twee genoemde problemen:**
+  1. **Voorkomen van bevriezen / herberekenen bij tab-switches (Caching):**
+     * Het reeds berekende 3D-model uit de `Prepare`-tab moet 100% hergebruikt worden in de `Preview`-tab, zonder de zware wiskundige berekeningen of meshes opnieuw uit te voeren bij het openen van de tab.
+  2. **Simulatie op basis van G-code (Ontleden / Parser):**
+     * In plaats van puur de interne wiskundige punten te gebruiken, kan de applicatie de **gegenereerde G-code ontleden (parsen)** om de simulatie af te spelen. Hierdoor ziet de gebruiker in de simulatie exact wat de machine gaat uitvoeren (inclusief echte offsets, snelheden en A/X/Y bewegingen).
 
 ### 3.3 Pauze / Hervat knop op Device tab
 * **Status:** Afgewezen.
