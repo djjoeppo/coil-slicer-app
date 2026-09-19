@@ -1,0 +1,23 @@
+[
+    {
+        "name": "Standaard Luidsprekerspoel 35mm",
+        "i": 35.0,
+        "hole": 0.0,
+        "f": 90.0,
+        "b": 50.0
+    },
+    {
+        "name": "Miniatuur Spoel 15mm",
+        "i": 15.0,
+        "hole": 5.0,
+        "f": 45.0,
+        "b": 25.0
+    },
+    {
+        "name": "Grote Subwoofer Spoel 75mm",
+        "i": 75.0,
+        "hole": 10.0,
+        "f": 160.0,
+        "b": 80.0
+    }
+]

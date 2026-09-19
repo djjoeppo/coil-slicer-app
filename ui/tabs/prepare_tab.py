@@ -63,8 +63,16 @@ class PrepareTab(QWidget):
         # --- SECTIE: SPOEL ---
         card_spool = QFrame(); card_spool.setObjectName("sectionCard")
         lay_card_spool = QVBoxLayout(card_spool)
+
+        spool_title_row = QWidget(); lay_st = QHBoxLayout(spool_title_row); lay_st.setContentsMargins(0,0,0,0)
         self.sec_spool_title = QLabel(); self.sec_spool_title.setObjectName("sectionTitle")
-        lay_card_spool.addWidget(self.sec_spool_title)
+        self.btn_spool_presets = QPushButton("🔍 Presets")
+        self.btn_spool_presets.setObjectName("secondaryActionButton")
+        self.btn_spool_presets.clicked.connect(self.open_spool_presets_popup)
+        lay_st.addWidget(self.sec_spool_title)
+        lay_st.addStretch()
+        lay_st.addWidget(self.btn_spool_presets)
+        lay_card_spool.addWidget(spool_title_row)
         
         self.lbl_inner_d = QLabel(); self.inputs["i"] = QLineEdit("35")
         self.lbl_hole_d = QLabel(); self.inputs["hole"] = QLineEdit("0")
@@ -150,6 +158,9 @@ class PrepareTab(QWidget):
         self.btn_update = QPushButton()
         self.btn_update.setObjectName("sliceActionButton")
         sidebar_layout.addWidget(self.btn_update)
+
+        # Connect change signals for visual status indicator
+        self._setup_dirty_listeners()
         
         self.btn_toggle_spool = QPushButton()
         self.btn_toggle_spool.setObjectName("secondaryActionButton")
@@ -161,6 +172,111 @@ class PrepareTab(QWidget):
         self.splitter.addWidget(sidebar_container)
         self.splitter.addWidget(self.viewer)
         self.splitter.setStretchFactor(1, 1) # Viewer should grow
+
+    def _setup_dirty_listeners(self):
+        for key, inp in self.inputs.items():
+            inp.textChanged.connect(self._on_input_changed)
+        self.combo_spool_color.currentIndexChanged.connect(lambda: self.set_calculate_dirty(True))
+        self.combo_wire_color.currentIndexChanged.connect(lambda: self.set_calculate_dirty(True))
+        self.combo_wire_type.currentIndexChanged.connect(lambda: self.set_calculate_dirty(True))
+        self.combo_material.currentIndexChanged.connect(lambda: self.set_calculate_dirty(True))
+
+    def _on_input_changed(self):
+        self.validate_inputs()
+        self.set_calculate_dirty(True)
+
+    def validate_inputs(self):
+        from core.config import parse_fraction_or_float
+        is_valid = True
+        invalid_style = "border: 1.5px solid #ef4444; background-color: rgba(239, 68, 68, 0.1);"
+
+        # Validate Core Diameter i vs Flange f and Hole
+        try:
+            val_i = parse_fraction_or_float(self.inputs["i"].text())
+            val_f = parse_fraction_or_float(self.inputs["f"].text())
+            if val_i <= 0 or val_i >= val_f:
+                self.inputs["i"].setStyleSheet(invalid_style)
+                is_valid = False
+            else:
+                self.inputs["i"].setStyleSheet("")
+        except Exception:
+            self.inputs["i"].setStyleSheet(invalid_style)
+            is_valid = False
+
+        # Validate Hole Diameter hole (hole < i and hole >= 0)
+        try:
+            val_hole = parse_fraction_or_float(self.inputs["hole"].text())
+            val_i = parse_fraction_or_float(self.inputs["i"].text())
+            if val_hole < 0 or val_hole >= val_i or val_i <= 0:
+                self.inputs["hole"].setStyleSheet(invalid_style)
+                is_valid = False
+            else:
+                self.inputs["hole"].setStyleSheet("")
+        except Exception:
+            self.inputs["hole"].setStyleSheet(invalid_style)
+            is_valid = False
+
+        # Validate Flange Diameter f (f > i)
+        try:
+            val_f = parse_fraction_or_float(self.inputs["f"].text())
+            val_i = parse_fraction_or_float(self.inputs["i"].text())
+            if val_f <= val_i:
+                self.inputs["f"].setStyleSheet(invalid_style)
+                is_valid = False
+            else:
+                self.inputs["f"].setStyleSheet("")
+        except Exception:
+            self.inputs["f"].setStyleSheet(invalid_style)
+            is_valid = False
+
+        # Validate Width b (b > 0)
+        try:
+            val_b = parse_fraction_or_float(self.inputs["b"].text())
+            if val_b <= 0:
+                self.inputs["b"].setStyleSheet(invalid_style)
+                is_valid = False
+            else:
+                self.inputs["b"].setStyleSheet("")
+        except Exception:
+            self.inputs["b"].setStyleSheet(invalid_style)
+            is_valid = False
+
+        # Validate Layers l (l >= 1)
+        try:
+            val_l = int(self.inputs["l"].text())
+            if val_l < 1:
+                self.inputs["l"].setStyleSheet(invalid_style)
+                is_valid = False
+            else:
+                self.inputs["l"].setStyleSheet("")
+        except Exception:
+            self.inputs["l"].setStyleSheet(invalid_style)
+            is_valid = False
+
+        return is_valid
+
+    def set_calculate_dirty(self, dirty: bool):
+        self._calculate_dirty = dirty
+        if dirty:
+            self.btn_update.setStyleSheet("""
+                QPushButton#sliceActionButton {
+                    background-color: #d97706;
+                    color: white;
+                    font-weight: bold;
+                    font-size: 13px;
+                    padding: 10px;
+                    border: none;
+                    border-radius: 4px;
+                }
+                QPushButton#sliceActionButton:hover {
+                    background-color: #f59e0b;
+                }
+            """)
+            self.btn_update.setText("⚠️ Berekenen vereist")
+        else:
+            self.btn_update.setStyleSheet("")
+            tx = TRANSLATIONS.get(self.main_window.current_lang, {}) if hasattr(self, 'main_window') else {}
+            self.btn_update.setText(tx.get("btn_update", "BEREKEN & SLICE"))
 
     def create_form_row(self, widget_right, text_label):
         row = QWidget(); lay = QHBoxLayout(row)
@@ -237,6 +353,28 @@ class PrepareTab(QWidget):
         # Update labels in languages
         tx = TRANSLATIONS.get(self.main_window.current_lang, {})
         self.retranslate_ui(tx)
+
+    def open_spool_presets_popup(self):
+        from ui.dialogs import SpoolPresetsDialog
+        is_light = (self.main_window.current_theme == "light")
+        popup = SpoolPresetsDialog(self, is_light_theme=is_light, lang=self.main_window.current_lang)
+        if popup.exec() and popup.selected_preset:
+            p = popup.selected_preset
+            unit = self.main_window.tab_settings.combo_units.currentText() if hasattr(self.main_window, 'tab_settings') else "mm"
+            scale = 1.0 / 25.4 if unit == "inch" else 1.0
+
+            i_val = float(p.get("i", 35)) * scale
+            hole_val = float(p.get("hole", 0)) * scale
+            f_val = float(p.get("f", 90)) * scale
+            b_val = float(p.get("b", 50)) * scale
+
+            fmt = "{:.4f}" if unit == "inch" else "{:.2f}"
+            self.inputs["i"].setText(fmt.format(i_val))
+            self.inputs["hole"].setText(fmt.format(hole_val))
+            self.inputs["f"].setText(fmt.format(f_val))
+            self.inputs["b"].setText(fmt.format(b_val))
+            self.validate_inputs()
+            self.set_calculate_dirty(True)
 
     def open_materials_popup(self):
         is_light = (self.main_window.current_theme == "light")

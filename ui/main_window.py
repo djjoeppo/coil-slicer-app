@@ -1,6 +1,6 @@
 # ui/main_window.py
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QFrame, QHBoxLayout, QPushButton, QStackedWidget
-from core.config import TRANSLATIONS
+from core.config import TRANSLATIONS, load_user_config, save_user_config
 from ui.tabs.prepare_tab import PrepareTab
 from ui.tabs.preview_tab import PreviewTab
 from ui.tabs.device_tab import DeviceTab
@@ -10,15 +10,65 @@ from core.controller import CoilController
 class CoilAppLayout(QWidget):
     def __init__(self):
         super().__init__()
-        self.current_lang = "NL"
-        self.current_theme = "dark"
         self.nav_buttons = []
+        self.user_config = load_user_config()
+        self.current_lang = self.user_config.get("lang", "NL")
+        self.current_theme = self.user_config.get("theme", "dark")
         
         # UI must be initialized before Controller
         self.init_ui()
         
         # Link the controller (Audit: Ensuring all widgets exist before controller binds)
         self.controller = CoilController(self)
+        if hasattr(self, 'user_config') and "machine_limits" in self.user_config:
+            self.controller.machine_limits = self.user_config["machine_limits"]
+
+        self._restore_user_config()
+        self._setup_config_save_listeners()
+
+    def _restore_user_config(self):
+        cfg = self.user_config
+        # Lang
+        self.tab_settings.combo_lang.blockSignals(True)
+        self.tab_settings.combo_lang.setCurrentText("Nederlands" if cfg.get("lang") == "NL" else "English")
+        self.tab_settings.combo_lang.blockSignals(False)
+
+        # Units
+        self.tab_settings.combo_units.blockSignals(True)
+        self.tab_settings.combo_units.setCurrentText(cfg.get("units", "mm"))
+        self.tab_settings.combo_units.blockSignals(False)
+
+        # Theme
+        self.tab_settings.combo_theme.blockSignals(True)
+        self.tab_settings.combo_theme.setCurrentIndex(1 if cfg.get("theme") == "light" else 0)
+        self.tab_settings.combo_theme.blockSignals(False)
+
+        # Res
+        if "t_res" in self.tab_settings.inputs:
+            self.tab_settings.inputs["t_res"].setText(str(cfg.get("t_res", "16")))
+        if "p_res" in self.tab_settings.inputs:
+            self.tab_settings.inputs["p_res"].setText(str(cfg.get("p_res", "32")))
+
+        self.apply_orca_theme()
+        self.update_ui_text()
+
+    def _setup_config_save_listeners(self):
+        if "t_res" in self.tab_settings.inputs:
+            self.tab_settings.inputs["t_res"].textChanged.connect(self._save_config_state)
+        if "p_res" in self.tab_settings.inputs:
+            self.tab_settings.inputs["p_res"].textChanged.connect(self._save_config_state)
+
+    def _save_config_state(self):
+        self.user_config["lang"] = self.current_lang
+        self.user_config["units"] = self.tab_settings.combo_units.currentText()
+        self.user_config["theme"] = self.current_theme
+        if hasattr(self, 'controller'):
+            self.user_config["machine_limits"] = self.controller.machine_limits
+        if "t_res" in self.tab_settings.inputs:
+            self.user_config["t_res"] = self.tab_settings.inputs["t_res"].text()
+        if "p_res" in self.tab_settings.inputs:
+            self.user_config["p_res"] = self.tab_settings.inputs["p_res"].text()
+        save_user_config(self.user_config)
 
     def init_ui(self):
         window_layout = QVBoxLayout(self)
@@ -74,11 +124,13 @@ class CoilAppLayout(QWidget):
     def change_language(self, text):
         self.current_lang = "NL" if text == "Nederlands" else "EN"
         self.update_ui_text()
+        self._save_config_state()
 
     def change_units(self, unit_text):
         # Notify the prepare tab to update unit displays
         if hasattr(self, 'tab_prepare'):
             self.tab_prepare.on_unit_changed(unit_text)
+        self._save_config_state()
 
     def update_ui_text(self):
         tx = TRANSLATIONS.get(self.current_lang, {})
@@ -152,7 +204,7 @@ class CoilAppLayout(QWidget):
                 QWidget#settingsPage { background-color: #f8f9fa; }
                 QFrame#sectionCard { background-color: #ffffff; border: 1px solid #ced4da; border-radius: 4px; padding: 12px; }
                 QLabel#sectionTitle { color: #000000; font-weight: bold; font-size: 12px; border-bottom: 1px solid #dee2e6; padding-bottom: 4px; margin-bottom: 8px; }
-                QLabel#formLabel { color: #495057; }
+                QLabel#formLabel { color: #343a40; font-size: 12px; font-weight: 500; }
                 QPushButton#editMaterialsBtn { background-color: #f1f3f5; border: 1px solid #ced4da; border-radius: 3px; font-size: 12px; }
                 QPushButton#editMaterialsBtn:hover { background-color: #dee2e6; }
                 QLineEdit { background-color: #ffffff; color: #212529; border: 1px solid #ced4da; border-radius: 3px; padding: 3px 5px; }
@@ -177,7 +229,7 @@ class CoilAppLayout(QWidget):
                 QWidget#settingsPage { background-color: #1e2022; }
                 QFrame#sectionCard { background-color: #222527; border: 1px solid #2d2f31; border-radius: 4px; padding: 12px; }
                 QLabel#sectionTitle { color: #ffffff; font-weight: bold; font-size: 12px; border-bottom: 1px solid #383b3d; padding-bottom: 4px; margin-bottom: 8px; }
-                QLabel#formLabel { color: #9da3a8; }
+                QLabel#formLabel { color: #c5c8ca; font-size: 12px; font-weight: 500; }
                 QPushButton#editMaterialsBtn { background-color: #2c2f31; border: 1px solid #383b3d; border-radius: 3px; font-size: 12px; }
                 QPushButton#editMaterialsBtn:hover { background-color: #383b3d; }
                 QLineEdit { background-color: #111213; color: #ffffff; border: 1px solid #383b3d; border-radius: 3px; padding: 3px 5px; }
@@ -190,3 +242,5 @@ class CoilAppLayout(QWidget):
                 QPushButton#secondaryActionButton { background-color: #2c2f31; color: #e3e4e5; padding: 7px; border: 1px solid #383b3d; border-radius: 4px; }
                 QPushButton#secondaryActionButton:hover { background-color: #383b3d; }
             """)
+        if hasattr(self, '_save_config_state'):
+            self._save_config_state()

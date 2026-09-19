@@ -1,6 +1,8 @@
 # viewer_3d.py
 import numpy as np
 import pyqtgraph.opengl as gl
+from PySide6.QtWidgets import QPushButton
+from PySide6.QtGui import QVector3D
 from OpenGL import GL  # Importeer ruwe OpenGL functies voor de glans
 
 class CustomGLMeshItem(gl.GLMeshItem):
@@ -95,6 +97,52 @@ class Coil3DViewer(gl.GLViewWidget):
         self.addItem(self.nozzle)
 
         self.wire_items = []
+        self.last_spool_data = None
+
+        # Fit to Screen / Reset Camera Overlay Button
+        self.btn_reset_camera = QPushButton("🏠 Fit to Screen", self)
+        self.btn_reset_camera.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(30, 32, 34, 0.85);
+                color: #ffffff;
+                border: 1px solid #383b3d;
+                border-radius: 4px;
+                padding: 6px 12px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #007edc;
+                border-color: #007edc;
+            }
+        """)
+        self.btn_reset_camera.clicked.connect(self.reset_camera)
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        if hasattr(self, 'btn_reset_camera'):
+            self.btn_reset_camera.adjustSize()
+            self.btn_reset_camera.move(self.width() - self.btn_reset_camera.width() - 15, 15)
+
+    def reset_camera(self):
+        """Resets camera angle and calculates ideal zoom distance based on spool size."""
+        flange_d = 90.0
+        width = 50.0
+
+        if hasattr(self, 'last_spool_data') and self.last_spool_data:
+            flange_d = float(self.last_spool_data.get("flange_d", 90.0))
+            width = float(self.last_spool_data.get("width", 50.0))
+
+        max_dim = max(flange_d, width, 20.0)
+        auto_distance = max(100.0, max_dim * 2.2)
+
+        self.opts.update({
+            "distance": auto_distance,
+            "elevation": 30,
+            "azimuth": 150,
+            "center": QVector3D(0, 0, width / 2.0)
+        })
+        self.update()
 
     def update_machine_elements(self, a_rot_deg, x_pos, y_pos, z_pos):
         # Spool rotates
@@ -107,6 +155,7 @@ class Coil3DViewer(gl.GLViewWidget):
         self.nozzle.translate(x_pos, y_pos, z_pos)
 
     def build_spool_meshes(self, spool_data):
+        self.last_spool_data = spool_data
         r_out = spool_data["r_out"]
         r_in = spool_data["r_in"]
         cols = spool_data["cols"]

@@ -67,7 +67,7 @@ class CoilController:
         self.preview_viewer.set_spool_visibility(self.spool_visible)
 
     def update_simulation(self, slider_value):
-        """Update the 3D viewer in the Preview tab based on simulation progress (Bolt optimized)."""
+        """Update the 3D viewer in the Preview tab based on simulation progress and parsed G-code."""
         if self.last_wire_cache is None or 'full_meshes' not in self.last_wire_cache: return
 
         progress = slider_value / 1000.0
@@ -78,44 +78,54 @@ class CoilController:
 
         partial_meshes = []
 
-        # Get offsets for nozzle visualization (Phase 2)
-        try:
-            wire_offset = float(self.tab_preview.input_wire_offset.text())
-            spool_offset = float(self.tab_preview.input_spool_offset.text())
-            y_offset = float(self.tab_preview.input_y_offset.text())
-        except ValueError:
-            wire_offset, spool_offset, y_offset = 0.0, 0.0, 0.0
+        # Try parsing live G-code for exact machine simulation playback
+        gcode_text = self.get_gcode()
+        parsed_moves = GCodeEngine.parse_gcode(gcode_text) if gcode_text else []
 
+        if parsed_moves:
+            move_idx = max(0, min(len(parsed_moves) - 1, int((len(parsed_moves) - 1) * progress)))
+            m = parsed_moves[move_idx]
+            a_rot_deg = m["a_deg"]
+            z_pos = m["x"]
+            r = m["y"]
+            a_rad = np.radians(a_rot_deg)
+            nozzle_x = r * np.cos(a_rad)
+            nozzle_y = r * np.sin(a_rad)
+            nozzle_z = z_pos
+            self.preview_viewer.update_machine_elements(a_rot_deg, nozzle_x, nozzle_y, nozzle_z)
+        else:
+            try:
+                wire_offset = float(self.tab_preview.input_wire_offset.text())
+                spool_offset = float(self.tab_preview.input_spool_offset.text())
+                y_offset = float(self.tab_preview.input_y_offset.text())
+            except ValueError:
+                wire_offset, spool_offset, y_offset = 0.0, 0.0, 0.0
+
+            if len(pts_list) > 0 and len(pts_list[0]) > 0:
+                n_pts = len(pts_list[0])
+                idx = max(0, min(n_pts - 1, int(n_pts * progress)))
+                last_pt = pts_list[0][idx]
+                last_angle = np.degrees(angles_list[0][idx])
+                r = np.sqrt(last_pt[0]**2 + last_pt[1]**2) + y_offset
+                angle_rad = angles_list[0][idx]
+                nozzle_x = r * np.cos(angle_rad)
+                nozzle_y = r * np.sin(angle_rad)
+                nozzle_z = last_pt[2] + wire_offset + spool_offset
+                self.preview_viewer.update_machine_elements(last_angle, nozzle_x, nozzle_y, nozzle_z)
+
+        # Slice mesh for progress display
         for w_idx in range(num_wires):
             full_mesh_data = full_meshes[w_idx]
             n_pts = len(pts_list[w_idx])
             current_n = max(2, int(n_pts * progress))
 
-            # Bolt optimization: reuse existing MeshData's vertexes and slice faces
-            # instead of creating completely new MeshData objects with vertex copies.
             tube_res = int(self.last_wire_cache['params']['t_res'])
             tube_res = min(tube_res, 32)
             n_seg = current_n - 1
             num_faces = n_seg * tube_res * 2
 
-            # Use raw faces from the full mesh for zero-copy slicing performance
             sliced_faces = full_mesh_data.faces()[:num_faces]
             partial_meshes.append(gl.MeshData(vertexes=full_mesh_data.vertexes(), faces=sliced_faces))
-
-            # Update nozzle position based on the last point of the first wire
-            if w_idx == 0:
-                idx = current_n - 1
-                last_pt = pts_list[w_idx][idx]
-                last_angle = np.degrees(angles_list[w_idx][idx])
-                
-                # Radial distance calculation
-                r = np.sqrt(last_pt[0]**2 + last_pt[1]**2) + y_offset
-                angle_rad = angles_list[w_idx][idx]
-                nozzle_x = r * np.cos(angle_rad)
-                nozzle_y = r * np.sin(angle_rad)
-                nozzle_z = last_pt[2] + wire_offset + spool_offset
-
-                self.preview_viewer.update_machine_elements(last_angle, nozzle_x, nozzle_y, nozzle_z)
 
         self.preview_viewer.render_wire_meshes(partial_meshes)
 
@@ -132,6 +142,10 @@ class CoilController:
 
     def process_update(self):
         try:
+            if hasattr(self.tab_prepare, 'validate_inputs') and not self.tab_prepare.validate_inputs():
+                QMessageBox.warning(self.ui, "Ongeldige Invoer", "Controleer de rood gemarkeerde invoervelden voor ongeldige of onmogelijke waarden.")
+                return
+
             is_multi = (self.tab_prepare.combo_wire_type.currentIndex() == 1)
             num_wires = int(float(self.tab_prepare.inputs["num_wires"].text())) if is_multi else 1
             num_wires = max(1, num_wires)
@@ -191,6 +205,7 @@ class CoilController:
                 self.start_calculation(v, wire_key)
             else:
                 self.apply_visuals()
+                self.tab_prepare.set_calculate_dirty(False)
 
         except Exception as e:
             print(f"Update error: {e}")
@@ -220,8 +235,10 @@ class CoilController:
         self.viewer.render_wire_meshes(result['full_meshes'])
         self.apply_visuals()
 
+        # Reset dirty state indicator on calculate button
+        self.tab_prepare.set_calculate_dirty(False)
+
         # Reset simulation on new calculation
-        self.tab_preview.slider.setValue(1000)
         self.update_simulation(1000)
 
     def on_calc_error(self, err_msg):
@@ -233,6 +250,8 @@ class CoilController:
         dialog = MachineLimitsDialog(self.ui, self.machine_limits)
         if dialog.exec():
             self.machine_limits = dialog.get_values()
+            if hasattr(self.ui, '_save_config_state'):
+                self.ui._save_config_state()
             print(f"Machine limits updated: {self.machine_limits}")
 
     def apply_visuals(self):
@@ -298,6 +317,7 @@ class CoilController:
                 max_x=self.machine_limits["max_x"]
             )
             self.tab_preview.set_gcode(gcode)
+            self.tab_preview.set_gcode_dirty(False)
             QMessageBox.information(self.ui, "Succes", "G-code succesvol gegenereerd.")
         except Exception as e:
             print(f"G-code generation error: {e}")

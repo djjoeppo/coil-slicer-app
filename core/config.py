@@ -90,3 +90,38 @@ def mm_to_awg(mm_val):
         return round(awg_val, 1)
     except Exception:
         return 40.0
+
+DEFAULT_USER_CONFIG = {
+    "lang": "NL",
+    "units": "mm",
+    "theme": "dark",
+    "machine_limits": {
+        "max_x": 200.0,
+        "max_y": 100.0,
+        "max_z": 15.0,
+        "max_z_force": 10.0
+    },
+    "t_res": "16",
+    "p_res": "32"
+}
+
+def load_user_config():
+    path = get_resource_path("user_config.json")
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+                res = DEFAULT_USER_CONFIG.copy()
+                res.update(cfg)
+                return res
+        except Exception as e:
+            print(f"Error loading user_config.json: {e}")
+    return DEFAULT_USER_CONFIG.copy()
+
+def save_user_config(config_dict):
+    path = get_resource_path("user_config.json")
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(config_dict, f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        print(f"Error saving user_config.json: {e}")

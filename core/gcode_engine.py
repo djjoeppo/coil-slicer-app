@@ -65,3 +65,69 @@ class GCodeEngine:
             gcode.append(self.end_gcode)
             
         return "\n".join(gcode)
+
+    @staticmethod
+    def parse_gcode(gcode_text):
+        """Parses G-code text and extracts motion coordinates (A, X, Y, Z, F) for simulation playback."""
+        if not gcode_text:
+            return []
+
+        moves = []
+        curr_a = 0.0
+        curr_x = 0.0
+        curr_y = 0.0
+        curr_z = 0.0
+        curr_f = 500.0
+        scale = 1.0
+
+        for line in gcode_text.splitlines():
+            line_clean = line.split(';')[0].strip().upper()
+            if not line_clean:
+                continue
+
+            tokens = line_clean.split()
+            if "G20" in tokens:
+                scale = 25.4
+            elif "G21" in tokens:
+                scale = 1.0
+
+            cmd = tokens[0] if tokens else ""
+
+            if cmd in ("G0", "G1", "G00", "G01"):
+                changed = False
+                for token in tokens[1:]:
+                    if token.startswith("A"):
+                        try:
+                            curr_a = float(token[1:])
+                            changed = True
+                        except ValueError: pass
+                    elif token.startswith("X"):
+                        try:
+                            curr_x = float(token[1:]) * scale
+                            changed = True
+                        except ValueError: pass
+                    elif token.startswith("Y"):
+                        try:
+                            curr_y = float(token[1:]) * scale
+                            changed = True
+                        except ValueError: pass
+                    elif token.startswith("Z"):
+                        try:
+                            curr_z = float(token[1:])
+                            changed = True
+                        except ValueError: pass
+                    elif token.startswith("F"):
+                        try:
+                            curr_f = float(token[1:])
+                        except ValueError: pass
+
+                if changed:
+                    moves.append({
+                        "a_deg": curr_a,
+                        "x": curr_x,
+                        "y": curr_y,
+                        "z": curr_z,
+                        "f": curr_f
+                    })
+
+        return moves

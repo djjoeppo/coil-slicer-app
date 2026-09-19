@@ -1,0 +1,13 @@
+{
+    "lang": "NL",
+    "units": "mm",
+    "theme": "dark",
+    "machine_limits": {
+        "max_x": 200.0,
+        "max_y": 100.0,
+        "max_z": 15.0,
+        "max_z_force": 10.0
+    },
+    "t_res": "16",
+    "p_res": "32"
+}

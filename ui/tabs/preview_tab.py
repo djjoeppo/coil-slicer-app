@@ -129,6 +129,9 @@ class PreviewTab(QWidget):
         self.btn_update_gcode.setObjectName("sliceActionButton")
         lay_card_machine.addWidget(self.btn_update_gcode)
 
+        # Connect change signals for visual status indicator
+        self._setup_dirty_listeners()
+
         right_layout.addWidget(card_machine)
 
         # G-code Display
@@ -160,6 +163,38 @@ class PreviewTab(QWidget):
         self.splitter.addWidget(center_widget)
         self.splitter.addWidget(right_panel)
         self.splitter.setStretchFactor(1, 1)
+
+    def _setup_dirty_listeners(self):
+        self.input_z_force.textChanged.connect(lambda: self.set_gcode_dirty(True))
+        self.input_feedrate.textChanged.connect(lambda: self.set_gcode_dirty(True))
+        self.input_wire_offset.textChanged.connect(lambda: self.set_gcode_dirty(True))
+        self.input_spool_offset.textChanged.connect(lambda: self.set_gcode_dirty(True))
+        self.input_y_offset.textChanged.connect(lambda: self.set_gcode_dirty(True))
+        self.txt_start_gcode.textChanged.connect(lambda: self.set_gcode_dirty(True))
+        self.txt_end_gcode.textChanged.connect(lambda: self.set_gcode_dirty(True))
+
+    def set_gcode_dirty(self, dirty: bool):
+        self._gcode_dirty = dirty
+        if dirty:
+            self.btn_update_gcode.setStyleSheet("""
+                QPushButton#sliceActionButton {
+                    background-color: #10b981;
+                    color: white;
+                    font-weight: bold;
+                    font-size: 13px;
+                    padding: 10px;
+                    border: 2px solid #059669;
+                    border-radius: 4px;
+                }
+                QPushButton#sliceActionButton:hover {
+                    background-color: #34d399;
+                }
+            """)
+            self.btn_update_gcode.setText("⚠️ G-Code herberekenen vereist")
+        else:
+            self.btn_update_gcode.setStyleSheet("")
+            tx = TRANSLATIONS.get(self.main_window.current_lang, {}) if hasattr(self, 'main_window') else {}
+            self.btn_update_gcode.setText(tx.get("btn_update_gcode", "Update G-Code & Offsets"))
 
     def create_form_row(self, widget_right, text_label):
         row = QWidget(); lay = QHBoxLayout(row)

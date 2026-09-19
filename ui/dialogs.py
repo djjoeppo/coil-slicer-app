@@ -2,9 +2,10 @@
 import os
 import json
 from PySide6.QtWidgets import (QDialog, QHBoxLayout, QVBoxLayout, QWidget, QFrame,
-                             QListWidget, QListWidgetItem, QLabel, QLineEdit, QPushButton, QGridLayout, QMessageBox)
+                             QListWidget, QListWidgetItem, QLabel, QLineEdit, QPushButton, QGridLayout, QMessageBox,
+                             QScrollArea, QInputDialog)
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QDoubleValidator
+from PySide6.QtGui import QDoubleValidator, QPixmap, QPainter, QPen, QBrush, QColor
 from core.config import TRANSLATIONS, get_resource_path
 
 class MachineLimitsDialog(QDialog):
@@ -385,5 +386,263 @@ class MaterialsPopUp(QDialog):
                 QPushButton#actionBtnSave { background-color: #007edc; color: white; border: none; }
                 QPushButton#actionBtnSave:hover { background-color: #0096ff; }
                 QPushButton#actionBtnDelete { background-color: #b22222; color: white; border: none; }
+                QPushButton#actionBtnDelete:hover { background-color: #dc3545; }
+            """)
+
+class SpoolPresetsDialog(QDialog):
+    """Pop-up Venster met visuele kaarten en 2D thumbnail previews van spoel presets."""
+    def __init__(self, parent=None, is_light_theme=False, lang="NL"):
+        super().__init__(parent)
+        self.lang = lang
+        self.is_light_theme = is_light_theme
+        self.setWindowTitle("Spoel Presets" if lang == "NL" else "Spool Presets")
+        self.resize(750, 500)
+        self.setWindowModality(Qt.WindowModal)
+
+        self.json_path = get_resource_path("spool_presets.json")
+        self.presets_data = []
+        self.selected_preset = None
+
+        self.init_ui()
+        self.apply_theme()
+        self.load_presets()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(10)
+
+        # Header / Top Action
+        top_row = QHBoxLayout()
+        lbl_title = QLabel("Spoel Presets" if self.lang == "NL" else "Spool Presets")
+        lbl_title.setObjectName("sectionTitle")
+        top_row.addWidget(lbl_title)
+        top_row.addStretch()
+
+        self.btn_add_preset = QPushButton("+ Opslaan als nieuwe preset" if self.lang == "NL" else "+ Save as new preset")
+        self.btn_add_preset.setObjectName("actionBtnSave")
+        self.btn_add_preset.clicked.connect(self.save_new_preset)
+        top_row.addWidget(self.btn_add_preset)
+
+        layout.addLayout(top_row)
+
+        # Scroll Area for Cards
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_content = QWidget()
+        self.cards_layout = QGridLayout(self.scroll_content)
+        self.cards_layout.setSpacing(12)
+        self.scroll_area.setWidget(self.scroll_content)
+
+        layout.addWidget(self.scroll_area)
+
+    def load_presets(self):
+        if os.path.exists(self.json_path):
+            try:
+                with open(self.json_path, "r", encoding="utf-8") as f:
+                    self.presets_data = json.load(f)
+            except Exception as e:
+                print(f"Fout bij laden spool presets: {e}")
+                self.presets_data = []
+        else:
+            self.presets_data = [
+                {"name": "Standaard Luidsprekerspoel 35mm", "i": 35.0, "hole": 0.0, "f": 90.0, "b": 50.0},
+                {"name": "Miniatuur Spoel 15mm", "i": 15.0, "hole": 5.0, "f": 45.0, "b": 25.0},
+                {"name": "Grote Subwoofer Spoel 75mm", "i": 75.0, "hole": 10.0, "f": 160.0, "b": 80.0}
+            ]
+            self.save_presets_to_file()
+
+        self.render_cards()
+
+    def save_presets_to_file(self):
+        try:
+            with open(self.json_path, "w", encoding="utf-8") as f:
+                json.dump(self.presets_data, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            print(f"Fout bij opslaan spool presets: {e}")
+
+    def render_cards(self):
+        for i in reversed(range(self.cards_layout.count())):
+            widget = self.cards_layout.itemAt(i).widget()
+            if widget is not None:
+                widget.setParent(None)
+
+        col_count = 2
+        for idx, preset in enumerate(self.presets_data):
+            row = idx // col_count
+            col = idx % col_count
+
+            card = QFrame()
+            card.setObjectName("sectionCard")
+            card_layout = QHBoxLayout(card)
+            card_layout.setContentsMargins(10, 10, 10, 10)
+            card_layout.setSpacing(10)
+
+            # Thumbnail
+            thumb_label = QLabel()
+            thumb_pixmap = self.generate_spool_thumbnail(
+                float(preset.get("i", 35)),
+                float(preset.get("hole", 0)),
+                float(preset.get("f", 90)),
+                float(preset.get("b", 50))
+            )
+            thumb_label.setPixmap(thumb_pixmap)
+            card_layout.addWidget(thumb_label)
+
+            # Info column
+            info_widget = QWidget()
+            info_layout = QVBoxLayout(info_widget)
+            info_layout.setContentsMargins(0, 0, 0, 0)
+            info_layout.setSpacing(4)
+
+            lbl_name = QLabel(preset.get("name", "Naamloze Spoel"))
+            lbl_name.setStyleSheet("font-weight: bold; font-size: 13px;")
+
+            unit = "mm"
+            if self.parent() and hasattr(self.parent(), 'main_window'):
+                unit = self.parent().main_window.tab_settings.combo_units.currentText()
+            scale = 1.0 / 25.4 if unit == "inch" else 1.0
+
+            i_val = float(preset.get("i", 0)) * scale
+            hole_val = float(preset.get("hole", 0)) * scale
+            f_val = float(preset.get("f", 0)) * scale
+            b_val = float(preset.get("b", 0)) * scale
+
+            details = f"Kern-Ø: {i_val:.1f} {unit} | Gat-Ø: {hole_val:.1f} {unit}\nFlens-Ø: {f_val:.1f} {unit} | Breedte: {b_val:.1f} {unit}"
+            lbl_details = QLabel(details)
+            lbl_details.setStyleSheet("color: #9da3a8; font-size: 11px;")
+
+            info_layout.addWidget(lbl_name)
+            info_layout.addWidget(lbl_details)
+            info_layout.addStretch()
+
+            # Buttons
+            btn_row = QHBoxLayout()
+            btn_select = QPushButton("Selecteren" if self.lang == "NL" else "Select")
+            btn_select.setObjectName("actionBtnSave")
+            btn_select.clicked.connect(lambda checked, p=preset: self.select_preset(p))
+
+            btn_delete = QPushButton("Verwijderen" if self.lang == "NL" else "Delete")
+            btn_delete.setObjectName("actionBtnDelete")
+            btn_delete.clicked.connect(lambda checked, idx=idx: self.delete_preset(idx))
+
+            btn_row.addWidget(btn_select)
+            btn_row.addWidget(btn_delete)
+            info_layout.addLayout(btn_row)
+
+            card_layout.addWidget(info_widget, 1)
+
+            self.cards_layout.addWidget(card, row, col)
+
+    def generate_spool_thumbnail(self, i, hole, f, b, width=120, height=100):
+        pixmap = QPixmap(width, height)
+        bg_color = QColor(17, 18, 19) if not self.is_light_theme else QColor(240, 240, 240)
+        pixmap.fill(bg_color)
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        max_dim = max(f, b, 1.0)
+        scale = min((width - 24) / max_dim, (height - 24) / max_dim)
+
+        cx, cy = width / 2.0, height / 2.0
+        w_px = max(8.0, b * scale)
+        f_px = max(12.0, f * scale)
+        i_px = max(4.0, i * scale)
+        hole_px = hole * scale if hole > 0 else 0
+
+        flange_color = QColor("#007edc")
+        painter.setBrush(QBrush(flange_color))
+        painter.setPen(QPen(flange_color.darker(120), 1))
+
+        t_px = max(3.0, w_px * 0.12)
+
+        # Left flange
+        painter.drawRect(int(cx - w_px/2), int(cy - f_px/2), int(t_px), int(f_px))
+        # Right flange
+        painter.drawRect(int(cx + w_px/2 - t_px), int(cy - f_px/2), int(t_px), int(f_px))
+
+        # Core cylinder
+        core_color = QColor("#d97706")
+        painter.setBrush(QBrush(core_color))
+        painter.setPen(QPen(core_color.darker(120), 1))
+        painter.drawRect(int(cx - w_px/2 + t_px), int(cy - i_px/2), int(w_px - 2*t_px), int(i_px))
+
+        # Center hole if present
+        if hole_px > 0:
+            hole_color = QColor(25, 25, 25) if not self.is_light_theme else QColor(255, 255, 255)
+            painter.setBrush(QBrush(hole_color))
+            painter.setPen(Qt.NoPen)
+            painter.drawRect(int(cx - w_px/2), int(cy - hole_px/2), int(w_px), int(hole_px))
+
+        painter.end()
+        return pixmap
+
+    def select_preset(self, preset):
+        self.selected_preset = preset
+        self.accept()
+
+    def save_new_preset(self):
+        title = "Nieuwe Preset Opslaan" if self.lang == "NL" else "Save New Preset"
+        label = "Voer preset naam in:" if self.lang == "NL" else "Enter preset name:"
+        name, ok = QInputDialog.getText(self, title, label)
+
+        if ok and name.strip():
+            i_val, hole_val, f_val, b_val = 35.0, 0.0, 90.0, 50.0
+            if self.parent() and hasattr(self.parent(), 'inputs'):
+                from core.config import parse_fraction_or_float
+                p = self.parent()
+                i_val = parse_fraction_or_float(p.inputs["i"].text())
+                hole_val = parse_fraction_or_float(p.inputs["hole"].text())
+                f_val = parse_fraction_or_float(p.inputs["f"].text())
+                b_val = parse_fraction_or_float(p.inputs["b"].text())
+
+            new_preset = {
+                "name": name.strip(),
+                "i": i_val,
+                "hole": hole_val,
+                "f": f_val,
+                "b": b_val
+            }
+            self.presets_data.append(new_preset)
+            self.save_presets_to_file()
+            self.render_cards()
+
+    def delete_preset(self, idx):
+        if idx < 0 or idx >= len(self.presets_data): return
+        p_name = self.presets_data[idx].get("name", "")
+
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Question)
+        msg_box.setWindowTitle("Preset Verwijderen" if self.lang == "NL" else "Delete Preset")
+        msg_box.setText(f"Weet u zeker dat u '{p_name}' wilt verwijderen?")
+        yes_btn = msg_box.addButton("Ja" if self.lang == "NL" else "Yes", QMessageBox.YesRole)
+        no_btn = msg_box.addButton("Nee" if self.lang == "NL" else "No", QMessageBox.NoRole)
+        msg_box.exec()
+
+        if msg_box.clickedButton() == yes_btn:
+            del self.presets_data[idx]
+            self.save_presets_to_file()
+            self.render_cards()
+
+    def apply_theme(self):
+        if self.is_light_theme:
+            self.setStyleSheet("""
+                QDialog { background-color: #f8f9fa; }
+                QLabel#sectionTitle { color: #000000; font-weight: bold; font-size: 14px; border-bottom: 1px solid #dee2e6; padding-bottom: 4px; }
+                QFrame#sectionCard { background-color: #ffffff; border: 1px solid #ced4da; border-radius: 6px; }
+                QPushButton#actionBtnSave { background-color: #007edc; color: white; border: none; font-weight: bold; padding: 5px 10px; border-radius: 4px; }
+                QPushButton#actionBtnSave:hover { background-color: #0096ff; }
+                QPushButton#actionBtnDelete { background-color: #dc3545; color: white; border: none; font-weight: bold; padding: 5px 10px; border-radius: 4px; }
+                QPushButton#actionBtnDelete:hover { background-color: #ff4d5e; }
+            """)
+        else:
+            self.setStyleSheet("""
+                QDialog { background-color: #1e2022; }
+                QLabel#sectionTitle { color: #ffffff; font-weight: bold; font-size: 14px; border-bottom: 1px solid #383b3d; padding-bottom: 4px; }
+                QFrame#sectionCard { background-color: #222527; border: 1px solid #2d2f31; border-radius: 6px; }
+                QPushButton#actionBtnSave { background-color: #007edc; color: white; border: none; font-weight: bold; padding: 5px 10px; border-radius: 4px; }
+                QPushButton#actionBtnSave:hover { background-color: #0096ff; }
+                QPushButton#actionBtnDelete { background-color: #b22222; color: white; border: none; font-weight: bold; padding: 5px 10px; border-radius: 4px; }
                 QPushButton#actionBtnDelete:hover { background-color: #dc3545; }
             """)
