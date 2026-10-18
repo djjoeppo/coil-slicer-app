@@ -159,44 +159,72 @@ class CoilController:
             i_val = parse_fraction_or_float(self.tab_prepare.inputs['i'].text()) * scale_to_mm
             hole_val = parse_fraction_or_float(self.tab_prepare.inputs['hole'].text()) * scale_to_mm
             f_val = parse_fraction_or_float(self.tab_prepare.inputs['f'].text()) * scale_to_mm
+            f_top_val = parse_fraction_or_float(self.tab_prepare.inputs['f_top'].text()) * scale_to_mm if self.tab_prepare.chk_asymmetric.isChecked() else f_val
+            flange_b_on = self.tab_prepare.chk_flange_b.isChecked()
+            flange_t_on = self.tab_prepare.chk_flange_t.isChecked()
+
             b_val = parse_fraction_or_float(self.tab_prepare.inputs['b'].text()) * scale_to_mm
 
+            # Retrieve wire diameter first
+            wire_d_text = self.tab_prepare.input_wire_d_display.text()
+            if "AWG" in wire_d_text:
+                import re
+                match = re.search(r'\(([^)]+)\)', wire_d_text)
+                if match:
+                    val_str = match.group(1).replace('"', '').strip()
+                    wire_w = float(val_str) * 25.4
+                else:
+                    wire_w = 0.5
+            else:
+                wire_w = float(wire_d_text.split(' ')[0]) if wire_d_text.split(' ')[0] else 0.5
+
+            mode_idx = self.tab_prepare.combo_winding_mode.currentIndex()
+            if mode_idx == 1:
+                # Doel Ohm mode
+                target_ohm = parse_fraction_or_float(self.tab_prepare.inputs['target_val'].text())
+                mat_name = self.tab_prepare.combo_material.currentText()
+                ohm_per_m = 0.085
+                for mat in self.tab_prepare.materials_database:
+                    if mat.get("name") == mat_name:
+                        ohm_per_m = float(mat.get("ohm", 0.085)) if float(mat.get("ohm", 0.0)) > 0 else 0.085
+                        break
+                num_layers = CoilMathEngine.calculate_layers_for_target_ohm(
+                    target_ohm, wire_w, ohm_per_m, i_val, b_val, num_wires
+                )
+            elif mode_idx == 2:
+                # Herspoelen / Meter mode
+                target_m = parse_fraction_or_float(self.tab_prepare.inputs['target_val'].text())
+                num_layers = CoilMathEngine.calculate_layers_for_target_length(
+                    target_m, wire_w, i_val, b_val, num_wires
+                )
+            else:
+                num_layers = int(self.tab_prepare.inputs['l'].text()) if 'l' in self.tab_prepare.inputs else 2
+
             v = {
+                'w': wire_w,
                 'i': i_val,
                 'hole': hole_val,
                 'f': f_val,
+                'f_top': f_top_val,
+                'flange_b_on': flange_b_on,
+                'flange_t_on': flange_t_on,
                 'b': b_val,
-                'l': int(self.tab_prepare.inputs['l'].text()),
+                'l': num_layers,
                 't_res': float(self.tab_settings.inputs['t_res'].text()),
                 'p_res': float(self.tab_settings.inputs['p_res'].text()),
                 'is_multi': is_multi,
                 'num_wires': num_wires
             }
 
-            # Retrieve wire diameter: if we are in inch mode, extract the fraction or decimals inside parentheses or AWG lookup
-            wire_d_text = self.tab_prepare.input_wire_d_display.text()
-            if "AWG" in wire_d_text:
-                # We can extract the millimeter or inch value. e.g. "24 AWG (0.0201")"
-                # Let's extract the value inside parenthesises: e.g. 0.0201
-                import re
-                match = re.search(r'\(([^)]+)\)', wire_d_text)
-                if match:
-                    val_str = match.group(1).replace('"', '').strip()
-                    v['w'] = float(val_str) * 25.4 # convert inch back to mm internally
-                else:
-                    v['w'] = 0.5 # fallback
-            else:
-                v['w'] = float(wire_d_text.split(' ')[0]) # millimeter value
-
             if v['hole'] >= v['i']:
                 v['hole'] = v['i'] - 1.0
                 self.tab_prepare.inputs['hole'].setText(str(v['hole']))
 
             wire_key = (v['w'], v['l'], v['i'], v['b'], v['t_res'], v['p_res'], num_wires)
-            spool_key = (v['hole'], v['i'], v['f'], v['b'])
+            spool_key = (v['hole'], v['i'], v['f'], v['f_top'], v['b'], flange_b_on, flange_t_on)
 
             if self.last_spool_cache is None or self.last_spool_cache != spool_key:
-                spool_data = CoilMathEngine.calculate_spool_geometry(v['hole'], v['i'], v['f'], v['b'])
+                spool_data = CoilMathEngine.calculate_spool_geometry(v['hole'], v['i'], v['f'], v['f_top'], v['b'], flange_b_on, flange_t_on)
                 self.viewer.build_spool_meshes(spool_data)
                 self.preview_viewer.build_spool_meshes(spool_data)
                 self.last_spool_cache = spool_key
@@ -234,6 +262,49 @@ class CoilController:
 
         self.viewer.render_wire_meshes(result['full_meshes'])
         self.apply_visuals()
+
+        # Calculate statistics for HUD and Detailed Analysis
+        wire_d_mm = float(result['params']['w'])
+        layers = int(result['params']['l'])
+        inner_d_mm = float(result['params']['i'])
+        width_mm = float(result['params']['b'])
+        num_wires = int(result['params'].get('num_wires', 1))
+        length_m = float(result.get('total_length_m', 0.0))
+
+        turns_per_layer = max(0.1, (width_mm - wire_d_mm * num_wires) / (wire_d_mm * num_wires))
+        total_turns = int(round(turns_per_layer * layers * num_wires))
+
+        mat_name = self.tab_prepare.combo_material.currentText()
+        ohm_per_m = 0.085
+        for mat in self.tab_prepare.materials_database:
+            if mat.get("name") == mat_name:
+                ohm_per_m = float(mat.get("ohm", 0.085)) if float(mat.get("ohm", 0.0)) > 0 else 0.085
+                break
+        resistance_ohm = length_m * ohm_per_m
+
+        wire_r_cm = (wire_d_mm / 2.0) / 10.0
+        wire_len_cm = length_m * 100.0
+        copper_vol_cm3 = np.pi * (wire_r_cm ** 2) * wire_len_cm
+        weight_g = copper_vol_cm3 * 8.96
+
+        inductance_mh = CoilMathEngine.calculate_inductance_mh(total_turns, inner_d_mm, width_mm, layers, wire_d_mm)
+        outer_d_mm = inner_d_mm + (2 * layers * wire_d_mm * 0.866)
+
+        stats = {
+            "total_turns": total_turns,
+            "turns_per_layer": turns_per_layer,
+            "layers": layers,
+            "length_m": length_m,
+            "resistance_ohm": resistance_ohm,
+            "weight_g": weight_g,
+            "inductance_mh": inductance_mh,
+            "outer_d_mm": outer_d_mm,
+            "width_mm": width_mm,
+            "wire_d_mm": wire_d_mm
+        }
+
+        self.viewer.update_hud_stats(stats)
+        self.preview_viewer.update_hud_stats(stats)
 
         # Reset dirty state indicator on calculate button
         self.tab_prepare.set_calculate_dirty(False)

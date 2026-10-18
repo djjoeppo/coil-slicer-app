@@ -646,3 +646,63 @@ class SpoolPresetsDialog(QDialog):
                 QPushButton#actionBtnDelete { background-color: #b22222; color: white; border: none; font-weight: bold; padding: 5px 10px; border-radius: 4px; }
                 QPushButton#actionBtnDelete:hover { background-color: #dc3545; }
             """)
+
+class CoilSummaryDialog(QDialog):
+    """Gedetailleerde Spoel-Analyse Pop-up met alle fysische en elektrische maatspecificaties."""
+    def __init__(self, parent=None, stats=None):
+        super().__init__(parent)
+        self.stats = stats or {}
+        self.setWindowTitle("Gedetailleerde Spoel Analyse")
+        self.resize(520, 420)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+
+        title = QLabel("📊 Uitgebreide Spoel-Analyse & Specificaties")
+        title.setObjectName("sectionTitle")
+        title.setStyleSheet("font-size: 14px; font-weight: bold; color: #007edc;")
+        layout.addWidget(title)
+
+        grid = QGridLayout()
+        grid.setSpacing(10)
+
+        s = self.stats
+        items = [
+            ("🔄 Totaal Windingen:", f"{s.get('total_turns', 0)}"),
+            ("🥞 Aantal Lagen:", f"{s.get('layers', 1)}"),
+            ("🌀 Windingen per Laag:", f"{s.get('turns_per_layer', 0):.1f}"),
+            ("📏 Totale Draadlengte:", f"{s.get('length_m', 0.0):.2f} m ({s.get('length_m', 0.0)*3.28084:.1f} ft)"),
+            ("⚡ DC-Weerstand (Rdc):", f"{s.get('resistance_ohm', 0.0):.2f} Ω"),
+            ("⚖️ Koper/Spoel Gewicht:", f"{s.get('weight_g', 0.0):.1f} gram"),
+            ("🧲 Lucht-Inductie (L):", f"{s.get('inductance_mh', 0.0):.3f} mH"),
+            ("⭕ Buitenste Wikkeldiameter:", f"{s.get('outer_d_mm', 0.0):.2f} mm"),
+            ("📐 Wikkelhoogte / Breedte:", f"{s.get('width_mm', 0.0):.2f} mm"),
+            ("🧵 Draad Diameter (incl. lak):", f"{s.get('wire_d_mm', 0.0):.3f} mm")
+        ]
+
+        for idx, (label, val) in enumerate(items):
+            card = QFrame()
+            card.setStyleSheet("background-color: #222527; border: 1px solid #2d2f31; border-radius: 4px; padding: 6px;")
+            card_lay = QVBoxLayout(card)
+            card_lay.setContentsMargins(6, 6, 6, 6)
+            card_lay.setSpacing(2)
+
+            lbl = QLabel(label)
+            lbl.setStyleSheet("color: #9da3a8; font-size: 11px;")
+            v_lbl = QLabel(val)
+            v_lbl.setStyleSheet("color: #ffffff; font-weight: bold; font-size: 13px;")
+
+            card_lay.addWidget(lbl)
+            card_lay.addWidget(v_lbl)
+            grid.addWidget(card, idx // 2, idx % 2)
+
+        layout.addLayout(grid)
+        layout.addStretch()
+
+        btn_close = QPushButton("Sluiten")
+        btn_close.setObjectName("actionBtnSave")
+        btn_close.clicked.connect(self.accept)
+        layout.addWidget(btn_close)

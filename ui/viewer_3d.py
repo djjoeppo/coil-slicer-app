@@ -1,7 +1,7 @@
 # viewer_3d.py
 import numpy as np
 import pyqtgraph.opengl as gl
-from PySide6.QtWidgets import QPushButton
+from PySide6.QtWidgets import QPushButton, QFrame, QLabel, QVBoxLayout
 from PySide6.QtGui import QVector3D
 from OpenGL import GL  # Importeer ruwe OpenGL functies voor de glans
 
@@ -98,6 +98,7 @@ class Coil3DViewer(gl.GLViewWidget):
 
         self.wire_items = []
         self.last_spool_data = None
+        self.last_stats = None
 
         # Fit to Screen / Reset Camera Overlay Button
         self.btn_reset_camera = QPushButton("🏠 Fit to Screen", self)
@@ -118,11 +119,87 @@ class Coil3DViewer(gl.GLViewWidget):
         """)
         self.btn_reset_camera.clicked.connect(self.reset_camera)
 
+        # Floating HUD Overlay Card in 3D Viewport
+        self.hud_card = QFrame(self)
+        self.hud_card.setObjectName("hudCard")
+        self.hud_card.setStyleSheet("""
+            QFrame#hudCard {
+                background-color: rgba(22, 24, 26, 0.88);
+                border: 1px solid #383b3d;
+                border-radius: 6px;
+                padding: 6px;
+            }
+            QLabel {
+                color: #e3e4e5;
+                font-size: 11px;
+            }
+            QLabel#hudTitle {
+                font-weight: bold;
+                color: #007edc;
+                font-size: 11px;
+            }
+        """)
+        hud_lay = QVBoxLayout(self.hud_card)
+        hud_lay.setContentsMargins(8, 8, 8, 8)
+        hud_lay.setSpacing(4)
+
+        self.lbl_hud_title = QLabel("SPOEL STATISTIEKEN", self.hud_card)
+        self.lbl_hud_title.setObjectName("hudTitle")
+        self.lbl_hud_info = QLabel("Nog geen berekening...", self.hud_card)
+
+        self.btn_hud_details = QPushButton("📊 Uitgebreide Analyse", self.hud_card)
+        self.btn_hud_details.setStyleSheet("""
+            QPushButton {
+                background-color: #007edc;
+                color: white;
+                border: none;
+                border-radius: 3px;
+                padding: 4px 8px;
+                font-size: 10px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #0096ff;
+            }
+        """)
+        self.btn_hud_details.clicked.connect(self.open_detailed_summary)
+
+        hud_lay.addWidget(self.lbl_hud_title)
+        hud_lay.addWidget(self.lbl_hud_info)
+        hud_lay.addWidget(self.btn_hud_details)
+        self.hud_card.hide()
+
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
+        self.reposition_overlays()
+
+    def reposition_overlays(self):
         if hasattr(self, 'btn_reset_camera'):
             self.btn_reset_camera.adjustSize()
             self.btn_reset_camera.move(self.width() - self.btn_reset_camera.width() - 15, 15)
+
+        if hasattr(self, 'hud_card') and self.hud_card.isVisible():
+            self.hud_card.adjustSize()
+            self.hud_card.move(15, 15)
+
+    def update_hud_stats(self, stats):
+        self.last_stats = stats
+        info_text = (
+            f"🔄 Windingen: {stats['total_turns']} ({stats['turns_per_layer']:.1f}/laag)\n"
+            f"📏 Lengte: {stats['length_m']:.2f} m\n"
+            f"⚡ Rdc: {stats['resistance_ohm']:.2f} Ω\n"
+            f"⚖️ Gewicht: {stats['weight_g']:.1f} g\n"
+            f"🧲 Inductie: {stats['inductance_mh']:.3f} mH"
+        )
+        self.lbl_hud_info.setText(info_text)
+        self.hud_card.show()
+        self.reposition_overlays()
+
+    def open_detailed_summary(self):
+        if not self.last_stats: return
+        from ui.dialogs import CoilSummaryDialog
+        dialog = CoilSummaryDialog(self, self.last_stats)
+        dialog.exec()
 
     def reset_camera(self):
         """Resets camera angle and calculates ideal zoom distance based on spool size."""
@@ -160,7 +237,10 @@ class Coil3DViewer(gl.GLViewWidget):
         r_in = spool_data["r_in"]
         cols = spool_data["cols"]
         width = spool_data["width"]
-        flange_d = spool_data["flange_d"]
+        flange_b_d = spool_data.get("flange_bottom_d", spool_data.get("flange_d", 90.0))
+        flange_t_d = spool_data.get("flange_top_d", spool_data.get("flange_d", 90.0))
+        flange_b_on = spool_data.get("flange_bottom_on", True)
+        flange_t_on = spool_data.get("flange_top_on", True)
 
         if r_in > 0:
             ang = np.linspace(0, 2*np.pi, cols, endpoint=False)
@@ -188,7 +268,9 @@ class Coil3DViewer(gl.GLViewWidget):
                 f.append([b, i, n]); f.append([t, i+cols, n+cols])
             hub_mesh = gl.MeshData(vertexes=v.astype(np.float32), faces=np.array(f, dtype=np.uint32))
 
-        def _make_flange(z_offset, thickness):
+        def _make_flange(z_offset, thickness, flange_d):
+            if flange_d <= r_out * 2:
+                return gl.MeshData(vertexes=np.zeros((3, 3), dtype=np.float32), faces=np.zeros((1, 3), dtype=np.uint32))
             rf_out = flange_d / 2
             rf_in = r_in
             ang = np.linspace(0, 2*np.pi, cols, endpoint=False)
@@ -208,8 +290,8 @@ class Coil3DViewer(gl.GLViewWidget):
             return gl.MeshData(vertexes=v_fl.astype(np.float32), faces=np.array(f_fl, dtype=np.uint32))
 
         self.hub.setMeshData(meshdata=hub_mesh)
-        self.flange_l.setMeshData(meshdata=_make_flange(-3, 3))
-        self.flange_r.setMeshData(meshdata=_make_flange(width, 3))
+        self.flange_l.setMeshData(meshdata=_make_flange(-3, 3, flange_b_d if flange_b_on else 0))
+        self.flange_r.setMeshData(meshdata=_make_flange(width, 3, flange_t_d if flange_t_on else 0))
 
     def render_wire_meshes(self, meshes_data):
         """Render wire meshes efficiently by reusing items when possible (Bolt optimization)."""

@@ -107,8 +107,60 @@ class CoilMathEngine:
         return tangents, v_side, v_up
 
     @staticmethod
-    def calculate_spool_geometry(hole_d, inner_d, flange_d, width, cols=60):
-        """Berekent puur de hoekpunten (vertices) en vlakken (faces) van de spoel/hub."""
+    def calculate_layers_for_target_ohm(target_ohm, wire_d, ohm_per_m, inner_d, width, num_wires=1):
+        """Calculates layers needed to achieve a target resistance in Ohms."""
+        if ohm_per_m <= 0 or target_ohm <= 0:
+            return 1
+        target_meters = target_ohm / ohm_per_m
+        return CoilMathEngine.calculate_layers_for_target_length(target_meters, wire_d, inner_d, width, num_wires)
+
+    @staticmethod
+    def calculate_layers_for_target_length(target_meters, wire_d, inner_d, width, num_wires=1):
+        """Calculates required number of layers to achieve a target wire length in meters."""
+        if target_meters <= 0:
+            return 1
+
+        target_mm = target_meters * 1000.0 / max(1, num_wires)
+        ribbon_width = max(0.05, wire_d * num_wires)
+        effective_width = max(0.1, width - ribbon_width)
+        turns_per_layer = max(0.1, effective_width / ribbon_width)
+
+        accumulated_mm = 0.0
+        layer = 0
+
+        while accumulated_mm < target_mm and layer < 100:
+            layer += 1
+            r = (inner_d / 2.0) + ((layer - 1) * wire_d * 0.866) + (wire_d / 2.0)
+            layer_len_mm = (2 * np.pi * r) * turns_per_layer
+            if accumulated_mm + layer_len_mm >= target_mm:
+                return max(1, layer)
+            accumulated_mm += layer_len_mm
+
+        return max(1, layer)
+
+    @staticmethod
+    def calculate_inductance_mh(turns, inner_d_mm, width_mm, layers, wire_d_mm):
+        """Wheeler's formula for multilayer air-core coil inductance in mH."""
+        if turns <= 0 or inner_d_mm <= 0 or width_mm <= 0:
+            return 0.0
+
+        # Convert dimensions to inches for Wheeler's formula
+        # L (uH) = (0.8 * (r_in_inches)^2 * N^2) / (6 * r + 9 * l + 10 * d_build)
+        r_avg_in = ((inner_d_mm / 2.0) + (layers * wire_d_mm * 0.866 / 2.0)) / 25.4
+        l_in = width_mm / 25.4
+        c_in = (layers * wire_d_mm * 0.866) / 25.4 # build depth
+
+        num = 0.8 * (r_avg_in ** 2) * (turns ** 2)
+        denom = 6.0 * r_avg_in + 9.0 * l_in + 10.0 * c_in
+        if denom <= 0:
+            return 0.0
+
+        inductance_uh = num / denom
+        return inductance_uh / 1000.0 # Convert uH to mH
+
+    @staticmethod
+    def calculate_spool_geometry(hole_d, inner_d, flange_bottom_d, flange_top_d, width, flange_bottom_on=True, flange_top_on=True, cols=60):
+        """Berekent puur de hoekpunten (vertices) en vlakken (faces) van de spoel/hub met ondersteuning voor asymmetrische en uitschakelbare flenzen."""
         r_out = inner_d / 2
         r_in = hole_d / 2
         
@@ -117,5 +169,9 @@ class CoilMathEngine:
             "r_in": r_in,
             "cols": cols,
             "width": width,
-            "flange_d": flange_d
+            "flange_bottom_d": flange_bottom_d if flange_bottom_on else 0.0,
+            "flange_top_d": flange_top_d if flange_top_on else 0.0,
+            "flange_bottom_on": flange_bottom_on,
+            "flange_top_on": flange_top_on,
+            "flange_d": max(flange_bottom_d, flange_top_d)
         }

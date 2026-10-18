@@ -74,15 +74,41 @@ class PrepareTab(QWidget):
         lay_st.addWidget(self.btn_spool_presets)
         lay_card_spool.addWidget(spool_title_row)
         
+        from PySide6.QtWidgets import QCheckBox
+
         self.lbl_inner_d = QLabel(); self.inputs["i"] = QLineEdit("35")
         self.lbl_hole_d = QLabel(); self.inputs["hole"] = QLineEdit("0")
-        self.lbl_flange_d = QLabel(); self.inputs["f"] = QLineEdit("90")
+        self.lbl_flange_d = QLabel("Flens Onder (mm):"); self.inputs["f"] = QLineEdit("90")
+        self.chk_flange_b = QCheckBox("Flens Onder Aan")
+        self.chk_flange_b.setChecked(True)
+
+        self.lbl_flange_top_d = QLabel("Flens Boven (mm):"); self.inputs["f_top"] = QLineEdit("90")
+        self.chk_flange_t = QCheckBox("Flens Boven Aan")
+        self.chk_flange_t.setChecked(True)
+
+        self.chk_asymmetric = QCheckBox("Oneven Flenzen (Asymmetrisch)")
+        self.chk_asymmetric.toggled.connect(self.toggle_asymmetric_flanges)
+
         self.lbl_width = QLabel(); self.inputs["b"] = QLineEdit("50")
         self.lbl_spool_color = QLabel(); self.combo_spool_color = QComboBox()
         
         lay_card_spool.addWidget(self.create_form_row(self.inputs["i"], self.lbl_inner_d))
         lay_card_spool.addWidget(self.create_form_row(self.inputs["hole"], self.lbl_hole_d))
-        lay_card_spool.addWidget(self.create_form_row(self.inputs["f"], self.lbl_flange_d))
+        lay_card_spool.addWidget(self.chk_asymmetric)
+
+        row_fb = QWidget(); lay_fb = QHBoxLayout(row_fb); lay_fb.setContentsMargins(0,2,0,2)
+        self.lbl_flange_d.setObjectName("formLabel")
+        lay_fb.addWidget(self.chk_flange_b); lay_fb.addWidget(self.lbl_flange_d); lay_fb.addStretch(); lay_fb.addWidget(self.inputs["f"])
+        self.inputs["f"].setFixedWidth(80)
+        lay_card_spool.addWidget(row_fb)
+
+        row_ft = QWidget(); lay_ft = QHBoxLayout(row_ft); lay_ft.setContentsMargins(0,2,0,2)
+        self.lbl_flange_top_d.setObjectName("formLabel")
+        lay_ft.addWidget(self.chk_flange_t); lay_ft.addWidget(self.lbl_flange_top_d); lay_ft.addStretch(); lay_ft.addWidget(self.inputs["f_top"])
+        self.inputs["f_top"].setFixedWidth(80)
+        lay_card_spool.addWidget(row_ft)
+        self.lbl_flange_top_d.hide(); self.inputs["f_top"].hide()
+
         lay_card_spool.addWidget(self.create_form_row(self.inputs["b"], self.lbl_width))
             
         lay_card_spool.addWidget(self.lbl_spool_color)
@@ -113,7 +139,14 @@ class PrepareTab(QWidget):
         self.input_wire_d_display.setReadOnly(True)
         self.input_wire_d_display.setAlignment(Qt.AlignRight)
         
-        self.lbl_layers = QLabel(); self.inputs["l"] = QLineEdit("2")
+        self.lbl_winding_mode = QLabel("Wikkellimiet Gebaseerd Op:")
+        self.combo_winding_mode = QComboBox()
+        self.combo_winding_mode.addItems(["Aantal Lagen", "Doel Ohm-waarde (Ω)", "Herspoelen / Meter-modus (m)"])
+        self.combo_winding_mode.currentIndexChanged.connect(self.toggle_winding_mode_fields)
+
+        self.lbl_layers = QLabel("Aantal Lagen:"); self.inputs["l"] = QLineEdit("2")
+        self.lbl_target_val = QLabel("Doel Waarde:"); self.inputs["target_val"] = QLineEdit("6.0")
+
         self.lbl_wire_type = QLabel(); self.combo_wire_type = QComboBox()
         self.combo_wire_type.addItems(["Single Wire", "Multi-Wire"])
         self.combo_wire_type.currentIndexChanged.connect(self.toggle_multi_wire_fields)
@@ -142,7 +175,15 @@ class PrepareTab(QWidget):
         lay_card_coil.addWidget(row_mat)
         
         lay_card_coil.addWidget(self.create_form_row(self.input_wire_d_display, self.lbl_wire_d))
+
+        lay_card_coil.addWidget(self.lbl_winding_mode)
+        lay_card_coil.addWidget(self.combo_winding_mode)
+
         lay_card_coil.addWidget(self.create_form_row(self.inputs["l"], self.lbl_layers))
+        row_target = self.create_form_row(self.inputs["target_val"], self.lbl_target_val)
+        lay_card_coil.addWidget(row_target)
+        self.lbl_target_val.hide(); self.inputs["target_val"].hide()
+
         lay_card_coil.addWidget(self.lbl_wire_type); lay_card_coil.addWidget(self.combo_wire_type)
         lay_card_coil.addWidget(self.create_form_row(self.inputs["num_wires"], self.lbl_num_wires))
         lay_card_coil.addWidget(self.scroll_colors)
@@ -176,6 +217,10 @@ class PrepareTab(QWidget):
     def _setup_dirty_listeners(self):
         for key, inp in self.inputs.items():
             inp.textChanged.connect(self._on_input_changed)
+        self.chk_flange_b.toggled.connect(lambda: self.set_calculate_dirty(True))
+        self.chk_flange_t.toggled.connect(lambda: self.set_calculate_dirty(True))
+        self.chk_asymmetric.toggled.connect(lambda: self.set_calculate_dirty(True))
+        self.combo_winding_mode.currentIndexChanged.connect(lambda: self.set_calculate_dirty(True))
         self.combo_spool_color.currentIndexChanged.connect(lambda: self.set_calculate_dirty(True))
         self.combo_wire_color.currentIndexChanged.connect(lambda: self.set_calculate_dirty(True))
         self.combo_wire_type.currentIndexChanged.connect(lambda: self.set_calculate_dirty(True))
@@ -353,6 +398,30 @@ class PrepareTab(QWidget):
         # Update labels in languages
         tx = TRANSLATIONS.get(self.main_window.current_lang, {})
         self.retranslate_ui(tx)
+
+    def toggle_winding_mode_fields(self, index):
+        if index == 0:
+            self.lbl_layers.show(); self.inputs["l"].show()
+            self.lbl_target_val.hide(); self.inputs["target_val"].hide()
+        elif index == 1:
+            self.lbl_layers.hide(); self.inputs["l"].hide()
+            self.lbl_target_val.setText("Doel Ohm (Ω):")
+            self.inputs["target_val"].setText("6.0")
+            self.lbl_target_val.show(); self.inputs["target_val"].show()
+        elif index == 2:
+            self.lbl_layers.hide(); self.inputs["l"].hide()
+            self.lbl_target_val.setText("Doel Lengte (m):")
+            self.inputs["target_val"].setText("15.0")
+            self.lbl_target_val.show(); self.inputs["target_val"].show()
+
+    def toggle_asymmetric_flanges(self, enabled):
+        if enabled:
+            self.lbl_flange_top_d.show()
+            self.inputs["f_top"].show()
+        else:
+            self.lbl_flange_top_d.hide()
+            self.inputs["f_top"].hide()
+            self.inputs["f_top"].setText(self.inputs["f"].text())
 
     def open_spool_presets_popup(self):
         from ui.dialogs import SpoolPresetsDialog
