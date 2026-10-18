@@ -37,19 +37,6 @@ class MachineWorker(QObject):
             self._ser = serial.Serial(port=port, baudrate=baud, timeout=timeout, write_timeout=timeout)
             self._ser.reset_input_buffer()
 
-            ready = False
-            for _ in range(250):
-                line = self._readline()
-                if line:
-                    self.line_received.emit(line)
-                if "READY" in line.upper():
-                    ready = True
-                    break
-
-            if not ready:
-                # Some ESP32 might not send READY, but we can try to continue
-                pass
-
             self._poll_timer.start()
             self.connected.emit(f"connected ({port})")
 
