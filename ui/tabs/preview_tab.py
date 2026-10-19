@@ -1,5 +1,5 @@
 # ui/tabs/preview_tab.py
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QTextEdit, QLabel, QPushButton, QFileDialog, QSlider, QSplitter, QFrame, QLineEdit
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QTextEdit, QLabel, QPushButton, QFileDialog, QSlider, QSplitter, QFrame, QLineEdit, QCheckBox
 from PySide6.QtCore import Qt, Signal, QTimer
 from ui.viewer_3d import Coil3DViewer
 
@@ -98,6 +98,18 @@ class PreviewTab(QWidget):
         self.lbl_feedrate = QLabel("Windsnelheid (Feedrate F):")
         self.input_feedrate = QLineEdit("500")
         lay_card_machine.addWidget(self.create_form_row(self.input_feedrate, self.lbl_feedrate))
+
+        self.lbl_wrap_feedrate = QLabel("Omkeer Snelheid (F):")
+        self.input_wrap_feedrate = QLineEdit("150")
+        lay_card_machine.addWidget(self.create_form_row(self.input_wrap_feedrate, self.lbl_wrap_feedrate))
+
+        self.lbl_dwell_time = QLabel("Kraag Rusttijd G4 P (sec):")
+        self.input_dwell_time = QLineEdit("1.0")
+        lay_card_machine.addWidget(self.create_form_row(self.input_dwell_time, self.lbl_dwell_time))
+
+        self.chk_pause_turnaround = QCheckBox("Pauzeer M0 bij kraag omkeer")
+        self.chk_pause_turnaround.setChecked(True)
+        lay_card_machine.addWidget(self.chk_pause_turnaround)
 
         self.lbl_wire_offset = QLabel("Draad Offset (mm):")
         self.input_wire_offset = QLineEdit("0.0")
