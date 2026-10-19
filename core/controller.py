@@ -292,6 +292,7 @@ class CoilController:
             gcode = self.gcode_engine.generate(
                 self.last_wire_cache['pts_list'],
                 self.last_wire_cache['angles_list'],
+                wire_d=self.last_wire_cache['params']['w'],
                 nozzle_y_offset=y_offset,
                 wire_offset=wire_offset,
                 spool_offset=spool_offset,

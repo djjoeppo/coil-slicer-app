@@ -8,7 +8,7 @@ class GCodeEngine:
         self.end_gcode = "M30 ; Program end"
         self.units = "mm" 
 
-    def generate(self, pts_list, angles_list, nozzle_y_offset=0.0, wire_offset=0.0, spool_offset=0.0, z_force=0.5, feedrate=500, wrap_feedrate=150, dwell_time=1.0, pause_on_turn=True, units="mm", max_x=200.0):
+    def generate(self, pts_list, angles_list, wire_d=0.5, nozzle_y_offset=0.0, wire_offset=0.0, spool_offset=0.0, z_force=0.5, feedrate=500, wrap_feedrate=150, dwell_time=1.0, pause_on_turn=True, units="mm", max_x=200.0):
         """Generates G-code based on simulation paths, machine offsets, and custom turnaround sequence."""
         if not pts_list or not angles_list:
             return ""
@@ -41,10 +41,15 @@ class GCodeEngine:
             gcode.append(f"; ERROR: Machine limit reached! X ({x_axis[0] * scale:.3f}) exceeds limit (0-{max_x * scale}).")
             return "\n".join(gcode)
 
-        # Initial move & Force Mode ON
-        gcode.append(f"G0 A{a_axis[0]:.3f} X{x_axis[0] * scale:.3f} Y{y_axis[0] * scale:.3f} Z{z_force:.3f}")
-        gcode.append("M401 ; Force Mode ON (Z in kg)")
+        # Calculate initial Z position: 10.0mm reference - wire_d - 0.5mm clearance
+        z_start = max(0.0, 10.0 - wire_d - 0.5)
+
+        # Initial move to start position
+        gcode.append(f"G0 A{a_axis[0]:.3f} X{x_axis[0] * scale:.3f} Y{y_axis[0] * scale:.3f} Z{z_start:.3f}")
         
+        # M403 Z[weight] sets Force Mode with specified tension weight in kg (e.g. M403 Z2)
+        gcode.append(f"M403 Z{z_force:g} ; Force Mode ON (Z-force in kg)")
+
         if pause_on_turn:
             gcode.append("M0 ; Pause before start (Check setup)")
 
@@ -78,10 +83,11 @@ class GCodeEngine:
             if points_in_turnaround > 0:
                 points_in_turnaround -= 1
 
-            gcode.append(f"G1 A{a_axis[i]:.3f} X{x_axis[i] * scale:.3f} Y{y_axis[i] * scale:.3f} Z{z_force:.3f} F{current_f:.0f}")
+            # Motion line without repeating Z parameter
+            gcode.append(f"G1 A{a_axis[i]:.3f} X{x_axis[i] * scale:.3f} Y{y_axis[i] * scale:.3f} F{current_f:.0f}")
 
         # Force Mode OFF
-        gcode.append("M400 ; Force Mode OFF (Z in mm)")
+        gcode.append("M400 ; Force Mode OFF")
 
         if self.end_gcode:
             gcode.append(self.end_gcode)
