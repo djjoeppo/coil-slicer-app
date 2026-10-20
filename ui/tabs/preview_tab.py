@@ -1,5 +1,5 @@
 # ui/tabs/preview_tab.py
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QTextEdit, QLabel, QPushButton, QFileDialog, QSlider, QSplitter, QFrame, QLineEdit
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QTextEdit, QLabel, QPushButton, QFileDialog, QSlider, QSplitter, QFrame, QLineEdit, QCheckBox
 from PySide6.QtCore import Qt, Signal, QTimer
 from ui.viewer_3d import Coil3DViewer
 
@@ -99,6 +99,22 @@ class PreviewTab(QWidget):
         self.input_feedrate = QLineEdit("500")
         lay_card_machine.addWidget(self.create_form_row(self.input_feedrate, self.lbl_feedrate))
 
+        self.lbl_wrap_feedrate = QLabel("Omkeer Snelheid (F):")
+        self.input_wrap_feedrate = QLineEdit("150")
+        lay_card_machine.addWidget(self.create_form_row(self.input_wrap_feedrate, self.lbl_wrap_feedrate))
+
+        self.lbl_dwell_time = QLabel("Kraag Rusttijd G4 P (sec):")
+        self.input_dwell_time = QLineEdit("1.0")
+        lay_card_machine.addWidget(self.create_form_row(self.input_dwell_time, self.lbl_dwell_time))
+
+        self.chk_pause_turnaround = QCheckBox("Pauzeer M0 bij kraag omkeer")
+        self.chk_pause_turnaround.setChecked(True)
+        lay_card_machine.addWidget(self.chk_pause_turnaround)
+
+        self.chk_compress_gcode = QCheckBox("G-code Compressie (1 regel per laag)")
+        self.chk_compress_gcode.setChecked(True)
+        lay_card_machine.addWidget(self.chk_compress_gcode)
+
         self.lbl_wire_offset = QLabel("Draad Offset (mm):")
         self.input_wire_offset = QLineEdit("0.0")
         lay_card_machine.addWidget(self.create_form_row(self.input_wire_offset, self.lbl_wire_offset))
@@ -128,6 +144,11 @@ class PreviewTab(QWidget):
         self.btn_update_gcode = QPushButton("Update G-Code & Offsets")
         self.btn_update_gcode.setObjectName("sliceActionButton")
         lay_card_machine.addWidget(self.btn_update_gcode)
+
+        self.btn_gcode_help = QPushButton("❓ G-code Commando's Help")
+        self.btn_gcode_help.setObjectName("secondaryActionButton")
+        self.btn_gcode_help.clicked.connect(self.open_gcode_help)
+        lay_card_machine.addWidget(self.btn_gcode_help)
 
         right_layout.addWidget(card_machine)
 
@@ -193,6 +214,11 @@ class PreviewTab(QWidget):
 
     def set_gcode(self, gcode):
         self.gcode_display.setPlainText(gcode)
+
+    def open_gcode_help(self):
+        from ui.dialogs import GCodeHelpDialog
+        dialog = GCodeHelpDialog(self, lang=getattr(self.main_window, 'current_lang', 'NL'))
+        dialog.exec()
 
     def save_gcode(self):
         gcode = self.gcode_display.toPlainText()

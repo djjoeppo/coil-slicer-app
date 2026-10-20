@@ -387,3 +387,72 @@ class MaterialsPopUp(QDialog):
                 QPushButton#actionBtnDelete { background-color: #b22222; color: white; border: none; }
                 QPushButton#actionBtnDelete:hover { background-color: #dc3545; }
             """)
+
+
+class GCodeHelpDialog(QDialog):
+    """Dialog showing supported G-codes and M-codes with explanations for the CNC Winder."""
+    def __init__(self, parent=None, is_light_theme=False, lang="NL"):
+        super().__init__(parent)
+        self.setWindowTitle("G-code & M-code Commando's Help" if lang == "NL" else "G-code & M-code Commands Help")
+        self.resize(650, 520)
+        self.is_light_theme = is_light_theme
+        self.lang = lang
+        self.init_ui()
+
+    def init_ui(self):
+        from PySide6.QtWidgets import QTextEdit
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+
+        lbl_title = QLabel("Ondersteunde G-code & M-code Commando's")
+        lbl_title.setStyleSheet("font-size: 14px; font-weight: bold; margin-bottom: 10px;")
+        layout.addWidget(lbl_title)
+
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+
+        help_html = """
+        <h3>G-Codes (Beweging & Positionering)</h3>
+        <table border="1" cellpadding="5" cellspacing="0" width="100%">
+            <tr><th>Commando</th><th>Omschrijving</th><th>Werking op Wikkelmachine</th></tr>
+            <tr><td><b>G0</b></td><td>Snelverplaatsing</td><td>Snelle verplaatsing van de assen (bijv. naar de startpositie).</td></tr>
+            <tr><td><b>G1</b></td><td>Gecontroleerde wikkelbeweging</td><td>Wikkellijn uitvoeren op ingestelde snelheid F. Coördinaten: A (rotatie), X (traverse), Y (nozzle).</td></tr>
+            <tr><td><b>G4 P...</b></td><td>Rusttijd / Dwell</td><td>Pauzeer P seconden (bijv. <code>G4 P1.0</code>). Gebruikt bij de kraag om de draad strak aan te leggen.</td></tr>
+            <tr><td><b>G20</b></td><td>Eenheden: Inches</td><td>Stelt de machine in op inches.</td></tr>
+            <tr><td><b>G21</b></td><td>Eenheden: Millimeters</td><td>Stelt de machine in op millimeters (standaard).</td></tr>
+            <tr><td><b>G28</b></td><td>Homing</td><td>Beweegt alle assen naar hun nul/referentiepunt.</td></tr>
+            <tr><td><b>G90</b></td><td>Absoluut positioneren</td><td>Coördinaten worden berekend t.o.v. de vaste machine-oorsprong.</td></tr>
+            <tr><td><b>G91</b></td><td>Relatief positioneren</td><td>Coördinaten worden berekend t.o.v. de huidige positie.</td></tr>
+            <tr><td><b>G119</b></td><td>Eindschakelaars status</td><td>Vraagt de status van de eindschakelaars op.</td></tr>
+        </table>
+
+        <h3>M-Codes (Machinesturing & Spanning)</h3>
+        <table border="1" cellpadding="5" cellspacing="0" width="100%">
+            <tr><th>Commando</th><th>Omschrijving</th><th>Werking op Wikkelmachine</th></tr>
+            <tr><td><b>M0</b></td><td>Programma pauze</td><td>Pauzeert het programma (bijv. voor inspectie van een laag of voor definitieve uitschakeling). Druk op hervatten om door te gaan.</td></tr>
+            <tr><td><b>M30</b></td><td>Programma einde</td><td>Beëindigt het G-code programma en reset de machinestatus.</td></tr>
+            <tr><td><b>M112 / M410</b></td><td>Noodstop / Quick Stop</td><td>Directe noodstop: stopt alle motoren onmiddellijk.</td></tr>
+            <tr><td><b>M114</b></td><td>Positie opvragen</td><td>Vraagt de huidige A, X, Y, Z posities op voor de DRO-uitlezing.</td></tr>
+            <tr><td><b>M400</b></td><td>Synchrone stop</td><td>Wacht tot alle geprogrammeerde bewegingen volledig zijn voltooid.</td></tr>
+            <tr><td><b>M401</b></td><td>Force Mode AAN (Standaard)</td><td>Schakelt gewicht/krachtsturing in op de Z-as.</td></tr>
+            <tr><td><b>M402</b></td><td>Trek/Gewichts-kalibratie</td><td>Kalibratiemodus voor de Z-as krachtsensor.</td></tr>
+            <tr><td><b>M403 Z...</b></td><td>Force Mode Instellen</td><td>Stelt de gewenste voorspanning/trekkracht op de draad in kg in (bijv. <code>M403 Z2</code> voor 2 kg, <code>M403 Z0</code> om uit te schakelen).</td></tr>
+        </table>
+
+        <h3>Parameters</h3>
+        <table border="1" cellpadding="5" cellspacing="0" width="100%">
+            <tr><th>Parameter</th><th>Betekenis</th></tr>
+            <tr><td><b>F...</b></td><td>Feedrate / Wikkelsnelheid in mm/min (bijv. <code>F800</code>).</td></tr>
+            <tr><td><b>P...</b></td><td>Pauzetijd in seconden voor <code>G4</code> (bijv. <code>G4 P1.0</code>).</td></tr>
+            <tr><td><b>A...</b></td><td>Spoel-rotatiehoek in graden.</td></tr>
+            <tr><td><b>X...</b></td><td>Traverse / Draadgeleider positie.</td></tr>
+            <tr><td><b>Y...</b></td><td>Nozzle afstand t.o.v. de spoel.</td></tr>
+            <tr><td><b>Z...</b></td><td>Draadspanning / Z-as positie.</td></tr>
+        </table>
+        """
+        text_edit.setHtml(help_html)
+        layout.addWidget(text_edit)
+
+        btn_close = QPushButton("Sluiten" if self.lang == "NL" else "Close")
+        btn_close.clicked.connect(self.accept)
+        layout.addWidget(btn_close)
