@@ -145,6 +145,11 @@ class PreviewTab(QWidget):
         self.btn_update_gcode.setObjectName("sliceActionButton")
         lay_card_machine.addWidget(self.btn_update_gcode)
 
+        self.btn_gcode_help = QPushButton("❓ G-code Commando's Help")
+        self.btn_gcode_help.setObjectName("secondaryActionButton")
+        self.btn_gcode_help.clicked.connect(self.open_gcode_help)
+        lay_card_machine.addWidget(self.btn_gcode_help)
+
         right_layout.addWidget(card_machine)
 
         # G-code Display
@@ -209,6 +214,11 @@ class PreviewTab(QWidget):
 
     def set_gcode(self, gcode):
         self.gcode_display.setPlainText(gcode)
+
+    def open_gcode_help(self):
+        from ui.dialogs import GCodeHelpDialog
+        dialog = GCodeHelpDialog(self, lang=getattr(self.main_window, 'current_lang', 'NL'))
+        dialog.exec()
 
     def save_gcode(self):
         gcode = self.gcode_display.toPlainText()
