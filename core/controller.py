@@ -262,6 +262,7 @@ class CoilController:
             wrap_feedrate = float(self.tab_preview.input_wrap_feedrate.text())
             dwell_time = float(self.tab_preview.input_dwell_time.text())
             pause_on_turn = self.tab_preview.chk_pause_turnaround.isChecked()
+            compress_gcode = self.tab_preview.chk_compress_gcode.isChecked()
 
             # Validation
             pts = self.last_wire_cache['pts_list'][0]
@@ -301,6 +302,7 @@ class CoilController:
                 wrap_feedrate=wrap_feedrate,
                 dwell_time=dwell_time,
                 pause_on_turn=pause_on_turn,
+                compress_gcode=compress_gcode,
                 units=self.gcode_engine.units,
                 max_x=self.machine_limits["max_x"]
             )

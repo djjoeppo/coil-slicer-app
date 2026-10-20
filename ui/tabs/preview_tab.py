@@ -111,6 +111,10 @@ class PreviewTab(QWidget):
         self.chk_pause_turnaround.setChecked(True)
         lay_card_machine.addWidget(self.chk_pause_turnaround)
 
+        self.chk_compress_gcode = QCheckBox("G-code Compressie (1 regel per laag)")
+        self.chk_compress_gcode.setChecked(True)
+        lay_card_machine.addWidget(self.chk_compress_gcode)
+
         self.lbl_wire_offset = QLabel("Draad Offset (mm):")
         self.input_wire_offset = QLineEdit("0.0")
         lay_card_machine.addWidget(self.create_form_row(self.input_wire_offset, self.lbl_wire_offset))
