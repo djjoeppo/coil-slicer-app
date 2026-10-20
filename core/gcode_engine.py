@@ -128,8 +128,10 @@ class GCodeEngine:
                 gcode.append(comment)
             gcode.append(f"G1 A{m['a']:.3f} X{m['x']:.3f} Y{m['y']:.3f} F{m['f']:.0f}")
 
-        # Force Mode OFF
-        gcode.append("M400 ; Force Mode OFF")
+        # End Sequence
+        gcode.append("M0 ; Pause before final shutdown")
+        gcode.append("M403 Z0 ; Release tension force")
+        gcode.append("G0 Z0 Y0 X0 ; Return axes to zero")
 
         if self.end_gcode:
             gcode.append(self.end_gcode)
