@@ -56,18 +56,34 @@ class GCodeEngine:
         if dwell_time > 0:
             gcode.append(f"G4 P{dwell_time:.1f} ; Initial wraparound dwell")
 
+        # Identify layer boundaries (turnaround indices where direction in X reverses)
+        layer_bounds = [0]
+        curr_dir = None
+        for i in range(1, len(pts)):
+            dx = x_axis[i] - x_axis[i-1]
+            new_d = 1 if dx > 1e-4 else (-1 if dx < -1e-4 else curr_dir)
+            if curr_dir is not None and new_d is not None and new_d != curr_dir:
+                layer_bounds.append(i-1)
+            curr_dir = new_d if new_d is not None else curr_dir
+        layer_bounds.append(len(pts) - 1)
+
+        # Build map of point_index -> (layer_start_angle, layer_end_angle, is_turnaround_start)
+        point_layer_info = {}
+        for b_idx in range(len(layer_bounds) - 1):
+            start_i = layer_bounds[b_idx]
+            end_i = layer_bounds[b_idx + 1]
+            a_start = a_axis[start_i]
+            a_end = a_axis[end_i]
+            for idx in range(start_i, end_i + 1):
+                point_layer_info[idx] = (a_start, a_end, idx == start_i and b_idx > 0)
+
         # Collect trajectory moves
         moves = []
-        current_dir = None
-        points_in_turnaround = 0
-        wrap_points_count = 5 # Number of slow points at wraparound
-
-        # First point entry
         moves.append({
             'a': a_axis[0],
             'x': x_axis[0] * scale,
             'y': y_axis[0] * scale,
-            'f': feedrate,
+            'f': wrap_feedrate,
             'meta': []
         })
 
@@ -76,23 +92,23 @@ class GCodeEngine:
                 gcode.append(f"; ERROR: Machine limit reached! X ({x_axis[i] * scale:.3f}) exceeds limit (0-{max_x * scale}).")
                 return "\n".join(gcode)
 
-            dx = x_axis[i] - x_axis[i-1]
-            new_dir = 1 if dx > 1e-4 else (-1 if dx < -1e-4 else current_dir)
+            a_start, a_end, is_turn_start = point_layer_info.get(i, (a_axis[0], a_axis[-1], False))
 
             meta = []
-            # Turnaround detected!
-            if current_dir is not None and new_dir is not None and new_dir != current_dir:
+            if is_turn_start:
                 if dwell_time > 0:
                     meta.append(f"G4 P{dwell_time:.1f} ; Dwell in flange for clean turnaround")
                 if pause_on_turn:
                     meta.append("M0 ; Pause for layer inspection")
-                points_in_turnaround = wrap_points_count
 
-            current_dir = new_dir if new_dir is not None else current_dir
+            # Determine feedrate: slow feedrate (wrap_feedrate) for the first 180 deg and last 180 deg of each layer
+            deg_from_start = abs(a_axis[i] - a_start)
+            deg_to_end = abs(a_end - a_axis[i])
 
-            current_f = wrap_feedrate if points_in_turnaround > 0 else feedrate
-            if points_in_turnaround > 0:
-                points_in_turnaround -= 1
+            if deg_from_start <= 180.0 or deg_to_end <= 180.0:
+                current_f = wrap_feedrate
+            else:
+                current_f = feedrate
 
             moves.append({
                 'a': a_axis[i],
