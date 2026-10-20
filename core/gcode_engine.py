@@ -4,12 +4,12 @@ import numpy as np
 
 class GCodeEngine:
     def __init__(self):
-        self.start_gcode = "G28 ; Home all axes"
-        self.end_gcode = "M30 ; Program end"
+        self.start_gcode = "G28"
+        self.end_gcode = "M30"
         self.units = "mm" 
 
     def generate(self, pts_list, angles_list, wire_d=0.5, nozzle_y_offset=0.0, wire_offset=0.0, spool_offset=0.0, z_force=0.5, feedrate=500, wrap_feedrate=150, dwell_time=1.0, pause_on_turn=True, compress_gcode=True, units="mm", max_x=200.0):
-        """Generates G-code based on simulation paths, machine offsets, custom turnaround sequence, and optional move compression."""
+        """Generates clean G-code without comments and with section spacing."""
         if not pts_list or not angles_list:
             return ""
             
@@ -17,14 +17,16 @@ class GCodeEngine:
         
         # Units
         if units.lower() == "inch":
-            gcode.append("G20 ; Inches")
+            gcode.append("G20")
         else:
-            gcode.append("G21 ; Millimeters")
+            gcode.append("G21")
             
-        gcode.append("G90 ; Absolute positioning")
+        gcode.append("G90")
         
         if self.start_gcode:
-            gcode.append(self.start_gcode)
+            clean_start = self.start_gcode.split(';')[0].strip()
+            if clean_start:
+                gcode.append(clean_start)
 
         # For simplicity, we use the first wire's path
         pts = pts_list[0]
@@ -46,15 +48,13 @@ class GCodeEngine:
 
         # Initial move to start position
         gcode.append(f"G0 A{a_axis[0]:.3f} X{x_axis[0] * scale:.3f} Y{y_axis[0] * scale:.3f} Z{z_start:.3f}")
+        gcode.append(f"M403 Z{z_force:g}")
         
-        # M403 Z[weight] sets Force Mode with specified tension weight in kg (e.g. M403 Z2)
-        gcode.append(f"M403 Z{z_force:g} ; Force Mode ON (Z-force in kg)")
-
         if pause_on_turn:
-            gcode.append("M0 ; Pause before start (Check setup)")
+            gcode.append("M0")
 
         if dwell_time > 0:
-            gcode.append(f"G4 P{dwell_time:.1f} ; Initial wraparound dwell")
+            gcode.append(f"G4 P{dwell_time:.1f}")
 
         # Identify layer boundaries (turnaround indices where direction in X reverses)
         layer_bounds = [0]
@@ -97,9 +97,9 @@ class GCodeEngine:
             meta = []
             if is_turn_start:
                 if dwell_time > 0:
-                    meta.append(f"G4 P{dwell_time:.1f} ; Dwell in flange for clean turnaround")
+                    meta.append(f"G4 P{dwell_time:.1f}")
                 if pause_on_turn:
-                    meta.append("M0 ; Pause for layer inspection")
+                    meta.append("M0")
 
             # Determine feedrate: slow feedrate (wrap_feedrate) for the first 180 deg and last 180 deg of each layer
             deg_from_start = abs(a_axis[i] - a_start)
@@ -122,19 +122,25 @@ class GCodeEngine:
         if compress_gcode:
             moves = self._compress_moves(moves)
 
-        # Output G-code lines from moves (starting from index 1 since index 0 was G0 start)
+        # Output G-code lines from moves
+        gcode.append("") # Blank line before layer moves
         for m in moves[1:]:
-            for comment in m['meta']:
-                gcode.append(comment)
+            if m['meta']:
+                gcode.append("") # Blank line before turnaround
+                for cmd in m['meta']:
+                    gcode.append(cmd)
             gcode.append(f"G1 A{m['a']:.3f} X{m['x']:.3f} Y{m['y']:.3f} F{m['f']:.0f}")
 
         # End Sequence
-        gcode.append("M0 ; Pause before final shutdown")
-        gcode.append("M403 Z0 ; Release tension force")
-        gcode.append("G0 Z0 Y0 X0 ; Return axes to zero")
+        gcode.append("") # Blank line before end sequence
+        gcode.append("M0")
+        gcode.append("M403 Z0")
+        gcode.append("G0 Z0 Y0 X0")
 
         if self.end_gcode:
-            gcode.append(self.end_gcode)
+            clean_end = self.end_gcode.split(';')[0].strip()
+            if clean_end:
+                gcode.append(clean_end)
             
         return "\n".join(gcode)
 
