@@ -1,10 +1,183 @@
 # viewer_3d.py
+import math
 import numpy as np
 import pyqtgraph.opengl as gl
 from OpenGL import GL  # Importeer ruwe OpenGL functies voor de glans
-from PySide6.QtWidgets import QFrame, QVBoxLayout, QGridLayout, QPushButton, QLabel
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QVector3D
+from PySide6.QtWidgets import QWidget, QFrame, QVBoxLayout, QGridLayout, QPushButton, QLabel
+from PySide6.QtCore import Qt, QPoint, QRectF
+from PySide6.QtGui import QVector3D, QPainter, QPolygonF, QColor, QPen, QBrush, QFont, QPainterPath
+
+
+class FusionViewCubeWidget(QWidget):
+    """An interactive 3D ViewCube widget matching Fusion 360 with live 3D rotation, face labels, red X/blue Z axes, and home house icon."""
+    def __init__(self, viewer):
+        super().__init__(viewer)
+        self.viewer = viewer
+        self.setFixedSize(125, 125)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+        self.setMouseTracking(True)
+        self.hovered_face = None
+        self.home_rect = QRectF(4, 4, 26, 26)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # 1. Draw Home House Icon at Top-Left
+        self._draw_home_icon(painter)
+
+        # 2. Get camera orientation
+        elev = self.viewer.opts.get('elevation', 30)
+        azim = self.viewer.opts.get('azimuth', 150)
+
+        e_rad = math.radians(elev)
+        a_rad = math.radians(azim)
+
+        cx, cy = 62, 65
+        scale = 26.0
+
+        # Define 8 Cube Vertices (-1..1)
+        cube_verts_3d = {
+            'FTL': (-1, 1, 1),   'FTR': (1, 1, 1),
+            'FBL': (-1, 1, -1),  'FBR': (1, 1, -1),
+            'BTL': (-1, -1, 1),  'BTR': (1, -1, 1),
+            'BBL': (-1, -1, -1), 'BBR': (1, -1, -1)
+        }
+
+        def project(x, y, z):
+            x1 = x * math.cos(-a_rad) - y * math.sin(-a_rad)
+            y1 = x * math.sin(-a_rad) + y * math.cos(-a_rad)
+            z1 = z
+
+            x2 = x1
+            y2 = y1 * math.cos(-e_rad) - z1 * math.sin(-e_rad)
+            z2 = y1 * math.sin(-e_rad) + z1 * math.cos(-e_rad)
+
+            px = cx + x2 * scale
+            py = cy - z2 * scale
+            return px, py, y2
+
+        proj_verts = {}
+        for k, (vx, vy, vz) in cube_verts_3d.items():
+            proj_verts[k] = project(vx, vy, vz)
+
+        # Define 6 Faces with outward normal vectors
+        faces = [
+            ('TOP', ['FTL', 'FTR', 'BTR', 'BTL'], (0, 0, 1)),
+            ('BOTTOM', ['FBL', 'FBR', 'BBR', 'BBL'], (0, 0, -1)),
+            ('FRONT', ['FTL', 'FTR', 'FBR', 'FBL'], (0, 1, 0)),
+            ('BACK', ['BTL', 'BTR', 'BBR', 'BBL'], (0, -1, 0)),
+            ('RIGHT', ['FTR', 'BTR', 'BBR', 'FBR'], (1, 0, 0)),
+            ('LEFT', ['FTL', 'BTL', 'BBL', 'FBL'], (-1, 0, 0))
+        ]
+
+        # Calculate transformed face depth & normal direction
+        visible_faces = []
+        for name, v_keys, (nx, ny, nz) in faces:
+            nx1 = nx * math.cos(-a_rad) - ny * math.sin(-a_rad)
+            ny1 = nx * math.sin(-a_rad) + ny * math.cos(-a_rad)
+            nz1 = nz
+
+            nx2 = nx1
+            ny2 = ny1 * math.cos(-e_rad) - nz1 * math.sin(-e_rad)
+            nz2 = ny1 * math.sin(-e_rad) + nz1 * math.cos(-e_rad)
+
+            avg_depth = sum(proj_verts[vk][2] for vk in v_keys) / 4.0
+
+            if ny2 < 0.05:
+                visible_faces.append((avg_depth, name, v_keys))
+
+        visible_faces.sort(key=lambda item: item[0])
+
+        # 3. Draw Red X and Blue Z Axes
+        ox, oy, _ = project(-1, -1, -1)
+        xx, xy, _ = project(1.2, -1, -1)
+        zx, zy, _ = project(-1, -1, 1.2)
+
+        pen_x = QPen(QColor(255, 60, 60), 2)
+        painter.setPen(pen_x)
+        painter.drawLine(int(ox), int(oy), int(xx), int(xy))
+        painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        painter.drawText(int(xx) + 2, int(xy) + 4, "X")
+
+        pen_z = QPen(QColor(60, 130, 255), 2)
+        painter.setPen(pen_z)
+        painter.drawLine(int(ox), int(oy), int(zx), int(zy))
+        painter.drawText(int(zx) - 8, int(zy) - 2, "Z")
+
+        # 4. Draw Cube Faces
+        self.face_polygons = {}
+        for depth, name, v_keys in visible_faces:
+            poly = QPolygonF([QPoint(int(proj_verts[vk][0]), int(proj_verts[vk][1])) for vk in v_keys])
+            self.face_polygons[name] = poly
+
+            is_hover = (self.hovered_face == name)
+            bg_color = QColor(0, 126, 220, 220) if is_hover else QColor(225, 228, 232, 235)
+            painter.setBrush(QBrush(bg_color))
+            painter.setPen(QPen(QColor(50, 55, 60), 1.5))
+            painter.drawPolygon(poly)
+
+            center_px = sum(proj_verts[vk][0] for vk in v_keys) / 4.0
+            center_py = sum(proj_verts[vk][1] for vk in v_keys) / 4.0
+
+            painter.setPen(QPen(QColor(255, 255, 255) if is_hover else QColor(30, 35, 40)))
+            painter.setFont(QFont("Segoe UI", 7, QFont.Bold))
+            rect = QRectF(center_px - 22, center_py - 10, 44, 20)
+            painter.drawText(rect, Qt.AlignCenter, name)
+
+    def _draw_home_icon(self, painter):
+        is_home_hover = (self.hovered_face == 'HOME')
+        pen = QPen(QColor(0, 126, 220) if is_home_hover else QColor(170, 175, 180), 2)
+        painter.setPen(pen)
+        painter.setBrush(Qt.NoBrush)
+
+        path = QPainterPath()
+        path.moveTo(17, 7)
+        path.lineTo(7, 15)
+        path.lineTo(27, 15)
+        path.closeSubpath()
+        painter.drawPath(path)
+
+        painter.drawRect(9, 15, 16, 12)
+        painter.drawRect(14, 19, 6, 8)
+
+    def mouseMoveEvent(self, event):
+        pos = event.position()
+        old_hover = self.hovered_face
+        self.hovered_face = None
+
+        if self.home_rect.contains(pos):
+            self.hovered_face = 'HOME'
+        elif hasattr(self, 'face_polygons'):
+            for name, poly in self.face_polygons.items():
+                if poly.containsPoint(pos, Qt.OddEvenFill):
+                    self.hovered_face = name
+                    break
+
+        if old_hover != self.hovered_face:
+            self.update()
+
+    def mousePressEvent(self, event):
+        pos = event.position()
+        if self.home_rect.contains(pos):
+            self.viewer.reset_home_view()
+            return
+
+        if hasattr(self, 'face_polygons'):
+            for name, poly in self.face_polygons.items():
+                if poly.containsPoint(pos, Qt.OddEvenFill):
+                    presets = {
+                        'TOP': (90, 0),
+                        'BOTTOM': (-90, 0),
+                        'FRONT': (0, 90),
+                        'BACK': (0, 270),
+                        'RIGHT': (0, 0),
+                        'LEFT': (0, 180)
+                    }
+                    if name in presets:
+                        elev, azim = presets[name]
+                        self.viewer.set_view_preset(elev, azim)
+                    break
 
 class CustomGLMeshItem(gl.GLMeshItem):
     """Een geavanceerde mesh die echte OpenGL glans (specular) ondersteunt
@@ -73,129 +246,8 @@ class Coil3DViewer(gl.GLViewWidget):
         self._current_flange_d = 90.0
         self._current_width = 50.0
 
-        # Create Navigation & ViewCube Overlay (Top Right, Fusion 360 style)
-        self.overlay = QFrame(self)
-        self.overlay.setStyleSheet("""
-            QFrame#viewCubeFrame {
-                background-color: rgba(18, 20, 22, 0.90);
-                border: 1px solid rgba(255, 255, 255, 0.2);
-                border-radius: 8px;
-            }
-            QLabel#viewBadge {
-                color: #00d2ff;
-                font-weight: bold;
-                font-size: 10px;
-                border: none;
-                background: transparent;
-            }
-            QPushButton {
-                background-color: rgba(45, 48, 52, 0.95);
-                color: #ffffff;
-                font-weight: bold;
-                font-size: 9px;
-                border: 1px solid rgba(255, 255, 255, 0.2);
-                border-radius: 3px;
-                padding: 2px;
-            }
-            QPushButton:hover {
-                background-color: #007edc;
-                color: #ffffff;
-            }
-            QPushButton#btnHome {
-                background-color: #007edc;
-                color: #ffffff;
-                font-size: 10px;
-            }
-            QPushButton#btnHome:hover {
-                background-color: #0096ff;
-            }
-            QPushButton#btnCorner {
-                background-color: rgba(60, 65, 72, 0.9);
-                color: #ffd700;
-                font-size: 8px;
-            }
-            QPushButton#btnCorner:hover {
-                background-color: #ff9800;
-                color: #ffffff;
-            }
-        """)
-        self.overlay.setObjectName("viewCubeFrame")
-
-        overlay_layout = QVBoxLayout(self.overlay)
-        overlay_layout.setContentsMargins(6, 6, 6, 6)
-        overlay_layout.setSpacing(4)
-
-        # Title / Active Orientation Badge
-        self.lbl_view_badge = QLabel("ISO VIEW 30°")
-        self.lbl_view_badge.setObjectName("viewBadge")
-        self.lbl_view_badge.setAlignment(Qt.AlignCenter)
-        overlay_layout.addWidget(self.lbl_view_badge)
-
-        # Home Button (House Icon)
-        self.btn_home = QPushButton("🏠 Home (ISO)")
-        self.btn_home.setObjectName("btnHome")
-        self.btn_home.setToolTip("Reset camera to Isometric Home view & Auto-zoom coil")
-        self.btn_home.clicked.connect(self.reset_home_view)
-        overlay_layout.addWidget(self.btn_home)
-
-        # ViewCube Grid with Faces & Corners (Fusion 360 Style)
-        grid_layout = QGridLayout()
-        grid_layout.setSpacing(2)
-
-        # Row 0: Top Corners & Top Face
-        btn_top_fl = QPushButton("T-F-L")
-        btn_top_fl.setObjectName("btnCorner")
-        btn_top_fl.setToolTip("Top-Front-Left Corner")
-        btn_top_fl.clicked.connect(lambda: self.set_view_preset(30, 135))
-        grid_layout.addWidget(btn_top_fl, 0, 0)
-
-        btn_top = QPushButton("TOP")
-        btn_top.clicked.connect(lambda: self.set_view_preset(90, 0))
-        grid_layout.addWidget(btn_top, 0, 1)
-
-        btn_top_fr = QPushButton("T-F-R")
-        btn_top_fr.setObjectName("btnCorner")
-        btn_top_fr.setToolTip("Top-Front-Right Corner")
-        btn_top_fr.clicked.connect(lambda: self.set_view_preset(30, 45))
-        grid_layout.addWidget(btn_top_fr, 0, 2)
-
-        # Row 1: Side Faces
-        btn_left = QPushButton("LEFT")
-        btn_left.clicked.connect(lambda: self.set_view_preset(0, 180))
-        grid_layout.addWidget(btn_left, 1, 0)
-
-        btn_front = QPushButton("FRONT")
-        btn_front.clicked.connect(lambda: self.set_view_preset(0, 90))
-        grid_layout.addWidget(btn_front, 1, 1)
-
-        btn_right = QPushButton("RIGHT")
-        btn_right.clicked.connect(lambda: self.set_view_preset(0, 0))
-        grid_layout.addWidget(btn_right, 1, 2)
-
-        # Row 2: Bottom Corners & Back Face
-        btn_top_bl = QPushButton("T-B-L")
-        btn_top_bl.setObjectName("btnCorner")
-        btn_top_bl.setToolTip("Top-Back-Left Corner")
-        btn_top_bl.clicked.connect(lambda: self.set_view_preset(30, 225))
-        grid_layout.addWidget(btn_top_bl, 2, 0)
-
-        btn_back = QPushButton("BACK")
-        btn_back.clicked.connect(lambda: self.set_view_preset(0, 270))
-        grid_layout.addWidget(btn_back, 2, 1)
-
-        btn_top_br = QPushButton("T-B-R")
-        btn_top_br.setObjectName("btnCorner")
-        btn_top_br.setToolTip("Top-Back-Right Corner")
-        btn_top_br.clicked.connect(lambda: self.set_view_preset(30, 315))
-        grid_layout.addWidget(btn_top_br, 2, 2)
-
-        # Row 3: Bottom Face
-        btn_bot = QPushButton("BOTTOM")
-        btn_bot.clicked.connect(lambda: self.set_view_preset(-90, 0))
-        grid_layout.addWidget(btn_bot, 3, 0, 1, 3)
-
-        overlay_layout.addLayout(grid_layout)
-        self.overlay.adjustSize()
+        # Create Interactive 3D ViewCube Widget (Fusion 360 Style)
+        self.view_cube = FusionViewCubeWidget(self)
 
         start_verts = np.array([[0,0,0], [1,0,0], [0,1,0]], dtype=np.float32)
         start_faces = np.array([[0,1,2]], dtype=np.uint32)
@@ -238,39 +290,18 @@ class Coil3DViewer(gl.GLViewWidget):
 
     def mouseMoveEvent(self, ev):
         super().mouseMoveEvent(ev)
-        self.update_view_badge()
+        if hasattr(self, 'view_cube'):
+            self.view_cube.update()
 
     def mouseReleaseEvent(self, ev):
         super().mouseReleaseEvent(ev)
-        self.update_view_badge()
-
-    def update_view_badge(self):
-        """Updates the ViewCube active orientation badge in real time as camera rotates."""
-        if not hasattr(self, 'lbl_view_badge'):
-            return
-        elev = int(self.opts.get('elevation', 30))
-        azim = int(self.opts.get('azimuth', 150)) % 360
-
-        if elev >= 75:
-            view_str = "TOP VIEW"
-        elif elev <= -75:
-            view_str = "BOTTOM VIEW"
-        else:
-            if 45 <= azim < 135:
-                view_str = "FRONT VIEW"
-            elif 135 <= azim < 225:
-                view_str = "LEFT VIEW"
-            elif 225 <= azim < 315:
-                view_str = "BACK VIEW"
-            else:
-                view_str = "RIGHT VIEW"
-
-        self.lbl_view_badge.setText(f"{view_str} ({elev}°)")
+        if hasattr(self, 'view_cube'):
+            self.view_cube.update()
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
-        if hasattr(self, 'overlay'):
-            self.overlay.move(self.width() - self.overlay.width() - 15, 15)
+        if hasattr(self, 'view_cube'):
+            self.view_cube.move(self.width() - self.view_cube.width() - 15, 15)
 
     def auto_fit_view(self):
         """Auto-calculates optimal camera distance and center point to fit coil nicely in viewport."""
