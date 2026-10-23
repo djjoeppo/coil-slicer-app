@@ -2,7 +2,8 @@
 import numpy as np
 import pyqtgraph.opengl as gl
 from OpenGL import GL  # Importeer ruwe OpenGL functies voor de glans
-from PySide6.QtWidgets import QFrame, QVBoxLayout, QGridLayout, QPushButton
+from PySide6.QtWidgets import QFrame, QVBoxLayout, QGridLayout, QPushButton, QLabel
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QVector3D
 
 class CustomGLMeshItem(gl.GLMeshItem):
@@ -72,57 +73,126 @@ class Coil3DViewer(gl.GLViewWidget):
         self._current_flange_d = 90.0
         self._current_width = 50.0
 
-        # Create Navigation & View Overlay (Top Right, Fusion 360 style)
+        # Create Navigation & ViewCube Overlay (Top Right, Fusion 360 style)
         self.overlay = QFrame(self)
         self.overlay.setStyleSheet("""
-            QFrame {
-                background-color: rgba(20, 22, 24, 0.85);
-                border: 1px solid rgba(255, 255, 255, 0.15);
-                border-radius: 6px;
+            QFrame#viewCubeFrame {
+                background-color: rgba(18, 20, 22, 0.90);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 8px;
             }
-            QPushButton {
-                background-color: rgba(45, 48, 52, 0.9);
-                color: #ffffff;
+            QLabel#viewBadge {
+                color: #00d2ff;
                 font-weight: bold;
                 font-size: 10px;
+                border: none;
+                background: transparent;
+            }
+            QPushButton {
+                background-color: rgba(45, 48, 52, 0.95);
+                color: #ffffff;
+                font-weight: bold;
+                font-size: 9px;
                 border: 1px solid rgba(255, 255, 255, 0.2);
                 border-radius: 3px;
-                padding: 3px;
+                padding: 2px;
             }
             QPushButton:hover {
                 background-color: #007edc;
                 color: #ffffff;
             }
+            QPushButton#btnHome {
+                background-color: #007edc;
+                color: #ffffff;
+                font-size: 10px;
+            }
+            QPushButton#btnHome:hover {
+                background-color: #0096ff;
+            }
+            QPushButton#btnCorner {
+                background-color: rgba(60, 65, 72, 0.9);
+                color: #ffd700;
+                font-size: 8px;
+            }
+            QPushButton#btnCorner:hover {
+                background-color: #ff9800;
+                color: #ffffff;
+            }
         """)
+        self.overlay.setObjectName("viewCubeFrame")
 
         overlay_layout = QVBoxLayout(self.overlay)
         overlay_layout.setContentsMargins(6, 6, 6, 6)
         overlay_layout.setSpacing(4)
 
+        # Title / Active Orientation Badge
+        self.lbl_view_badge = QLabel("ISO VIEW 30°")
+        self.lbl_view_badge.setObjectName("viewBadge")
+        self.lbl_view_badge.setAlignment(Qt.AlignCenter)
+        overlay_layout.addWidget(self.lbl_view_badge)
+
         # Home Button (House Icon)
-        self.btn_home = QPushButton("🏠 Home")
+        self.btn_home = QPushButton("🏠 Home (ISO)")
+        self.btn_home.setObjectName("btnHome")
         self.btn_home.setToolTip("Reset camera to Isometric Home view & Auto-zoom coil")
         self.btn_home.clicked.connect(self.reset_home_view)
         overlay_layout.addWidget(self.btn_home)
 
-        # Grid of View Presets
+        # ViewCube Grid with Faces & Corners (Fusion 360 Style)
         grid_layout = QGridLayout()
         grid_layout.setSpacing(2)
 
-        views = [
-            ("TOP", 90, 0, 0, 0),
-            ("FRONT", 0, 90, 1, 0),
-            ("RIGHT", 0, 0, 1, 1),
-            ("LEFT", 0, 180, 2, 0),
-            ("BACK", 0, 270, 2, 1),
-            ("BOT", -90, 0, 3, 0)
-        ]
+        # Row 0: Top Corners & Top Face
+        btn_top_fl = QPushButton("T-F-L")
+        btn_top_fl.setObjectName("btnCorner")
+        btn_top_fl.setToolTip("Top-Front-Left Corner")
+        btn_top_fl.clicked.connect(lambda: self.set_view_preset(30, 135))
+        grid_layout.addWidget(btn_top_fl, 0, 0)
 
-        for name, elev, azim, row, col in views:
-            btn = QPushButton(name)
-            btn.setFixedSize(38, 22)
-            btn.clicked.connect(lambda _, e=elev, a=azim: self.set_view_preset(e, a))
-            grid_layout.addWidget(btn, row, col)
+        btn_top = QPushButton("TOP")
+        btn_top.clicked.connect(lambda: self.set_view_preset(90, 0))
+        grid_layout.addWidget(btn_top, 0, 1)
+
+        btn_top_fr = QPushButton("T-F-R")
+        btn_top_fr.setObjectName("btnCorner")
+        btn_top_fr.setToolTip("Top-Front-Right Corner")
+        btn_top_fr.clicked.connect(lambda: self.set_view_preset(30, 45))
+        grid_layout.addWidget(btn_top_fr, 0, 2)
+
+        # Row 1: Side Faces
+        btn_left = QPushButton("LEFT")
+        btn_left.clicked.connect(lambda: self.set_view_preset(0, 180))
+        grid_layout.addWidget(btn_left, 1, 0)
+
+        btn_front = QPushButton("FRONT")
+        btn_front.clicked.connect(lambda: self.set_view_preset(0, 90))
+        grid_layout.addWidget(btn_front, 1, 1)
+
+        btn_right = QPushButton("RIGHT")
+        btn_right.clicked.connect(lambda: self.set_view_preset(0, 0))
+        grid_layout.addWidget(btn_right, 1, 2)
+
+        # Row 2: Bottom Corners & Back Face
+        btn_top_bl = QPushButton("T-B-L")
+        btn_top_bl.setObjectName("btnCorner")
+        btn_top_bl.setToolTip("Top-Back-Left Corner")
+        btn_top_bl.clicked.connect(lambda: self.set_view_preset(30, 225))
+        grid_layout.addWidget(btn_top_bl, 2, 0)
+
+        btn_back = QPushButton("BACK")
+        btn_back.clicked.connect(lambda: self.set_view_preset(0, 270))
+        grid_layout.addWidget(btn_back, 2, 1)
+
+        btn_top_br = QPushButton("T-B-R")
+        btn_top_br.setObjectName("btnCorner")
+        btn_top_br.setToolTip("Top-Back-Right Corner")
+        btn_top_br.clicked.connect(lambda: self.set_view_preset(30, 315))
+        grid_layout.addWidget(btn_top_br, 2, 2)
+
+        # Row 3: Bottom Face
+        btn_bot = QPushButton("BOTTOM")
+        btn_bot.clicked.connect(lambda: self.set_view_preset(-90, 0))
+        grid_layout.addWidget(btn_bot, 3, 0, 1, 3)
 
         overlay_layout.addLayout(grid_layout)
         self.overlay.adjustSize()
@@ -165,6 +235,37 @@ class Coil3DViewer(gl.GLViewWidget):
         # Nozzle moves
         self.nozzle.resetTransform()
         self.nozzle.translate(x_pos, y_pos, z_pos)
+
+    def mouseMoveEvent(self, ev):
+        super().mouseMoveEvent(ev)
+        self.update_view_badge()
+
+    def mouseReleaseEvent(self, ev):
+        super().mouseReleaseEvent(ev)
+        self.update_view_badge()
+
+    def update_view_badge(self):
+        """Updates the ViewCube active orientation badge in real time as camera rotates."""
+        if not hasattr(self, 'lbl_view_badge'):
+            return
+        elev = int(self.opts.get('elevation', 30))
+        azim = int(self.opts.get('azimuth', 150)) % 360
+
+        if elev >= 75:
+            view_str = "TOP VIEW"
+        elif elev <= -75:
+            view_str = "BOTTOM VIEW"
+        else:
+            if 45 <= azim < 135:
+                view_str = "FRONT VIEW"
+            elif 135 <= azim < 225:
+                view_str = "LEFT VIEW"
+            elif 225 <= azim < 315:
+                view_str = "BACK VIEW"
+            else:
+                view_str = "RIGHT VIEW"
+
+        self.lbl_view_badge.setText(f"{view_str} ({elev}°)")
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
