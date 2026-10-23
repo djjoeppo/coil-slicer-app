@@ -158,7 +158,7 @@ def main():
 
         window.resize(1450, 900)
         splash.finish(window)
-        window.show()
+        window.showMaximized()
         sys.exit(app.exec())
 
     except Exception as e:

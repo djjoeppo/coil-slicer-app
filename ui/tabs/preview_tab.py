@@ -181,6 +181,7 @@ class PreviewTab(QWidget):
         self.splitter.addWidget(center_widget)
         self.splitter.addWidget(right_panel)
         self.splitter.setStretchFactor(1, 1)
+        self.splitter.setSizes([260, 800, 360])
 
     def create_form_row(self, widget_right, text_label):
         row = QWidget(); lay = QHBoxLayout(row)
