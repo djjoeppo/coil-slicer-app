@@ -185,6 +185,8 @@ class CoilController:
                 spool_data = CoilMathEngine.calculate_spool_geometry(v['hole'], v['i'], v['f'], v['b'])
                 self.viewer.build_spool_meshes(spool_data)
                 self.preview_viewer.build_spool_meshes(spool_data)
+                self.viewer.auto_fit_view()
+                self.preview_viewer.auto_fit_view()
                 self.last_spool_cache = spool_key
 
             if self.last_wire_cache is None or self.last_wire_cache['key'] != wire_key:
@@ -219,6 +221,8 @@ class CoilController:
 
         self.viewer.render_wire_meshes(result['full_meshes'])
         self.apply_visuals()
+        self.viewer.auto_fit_view()
+        self.preview_viewer.auto_fit_view()
 
         # Reset simulation on new calculation
         self.tab_preview.slider.setValue(1000)

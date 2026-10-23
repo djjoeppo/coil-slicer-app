@@ -2,6 +2,8 @@
 import numpy as np
 import pyqtgraph.opengl as gl
 from OpenGL import GL  # Importeer ruwe OpenGL functies voor de glans
+from PySide6.QtWidgets import QFrame, QVBoxLayout, QGridLayout, QPushButton
+from PySide6.QtGui import QVector3D
 
 class CustomGLMeshItem(gl.GLMeshItem):
     """Een geavanceerde mesh die echte OpenGL glans (specular) ondersteunt
@@ -67,6 +69,64 @@ class Coil3DViewer(gl.GLViewWidget):
         self.setBackgroundColor("#111111")
         self.opts.update({"distance": 250, "elevation": 30, "azimuth": 150})
 
+        self._current_flange_d = 90.0
+        self._current_width = 50.0
+
+        # Create Navigation & View Overlay (Top Right, Fusion 360 style)
+        self.overlay = QFrame(self)
+        self.overlay.setStyleSheet("""
+            QFrame {
+                background-color: rgba(20, 22, 24, 0.85);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 6px;
+            }
+            QPushButton {
+                background-color: rgba(45, 48, 52, 0.9);
+                color: #ffffff;
+                font-weight: bold;
+                font-size: 10px;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 3px;
+                padding: 3px;
+            }
+            QPushButton:hover {
+                background-color: #007edc;
+                color: #ffffff;
+            }
+        """)
+
+        overlay_layout = QVBoxLayout(self.overlay)
+        overlay_layout.setContentsMargins(6, 6, 6, 6)
+        overlay_layout.setSpacing(4)
+
+        # Home Button (House Icon)
+        self.btn_home = QPushButton("🏠 Home")
+        self.btn_home.setToolTip("Reset camera to Isometric Home view & Auto-zoom coil")
+        self.btn_home.clicked.connect(self.reset_home_view)
+        overlay_layout.addWidget(self.btn_home)
+
+        # Grid of View Presets
+        grid_layout = QGridLayout()
+        grid_layout.setSpacing(2)
+
+        views = [
+            ("TOP", 90, 0, 0, 0),
+            ("FRONT", 0, 90, 1, 0),
+            ("RIGHT", 0, 0, 1, 1),
+            ("LEFT", 0, 180, 2, 0),
+            ("BACK", 0, 270, 2, 1),
+            ("BOT", -90, 0, 3, 0)
+        ]
+
+        for name, elev, azim, row, col in views:
+            btn = QPushButton(name)
+            btn.setFixedSize(38, 22)
+            btn.clicked.connect(lambda _, e=elev, a=azim: self.set_view_preset(e, a))
+            grid_layout.addWidget(btn, row, col)
+
+        overlay_layout.addLayout(grid_layout)
+        self.overlay.adjustSize()
+
         start_verts = np.array([[0,0,0], [1,0,0], [0,1,0]], dtype=np.float32)
         start_faces = np.array([[0,1,2]], dtype=np.uint32)
         light_mesh = gl.MeshData(vertexes=start_verts, faces=start_faces)
@@ -106,7 +166,42 @@ class Coil3DViewer(gl.GLViewWidget):
         self.nozzle.resetTransform()
         self.nozzle.translate(x_pos, y_pos, z_pos)
 
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        if hasattr(self, 'overlay'):
+            self.overlay.move(self.width() - self.overlay.width() - 15, 15)
+
+    def auto_fit_view(self):
+        """Auto-calculates optimal camera distance and center point to fit coil nicely in viewport."""
+        flange_d = getattr(self, '_current_flange_d', 90.0)
+        width = getattr(self, '_current_width', 50.0)
+
+        max_dim = max(flange_d, width, 20.0)
+        calc_dist = max_dim * 1.85
+        calc_dist = max(40.0, min(1500.0, calc_dist))
+
+        center_z = width / 2.0
+
+        self.opts['center'] = QVector3D(0.0, 0.0, center_z)
+        self.opts['distance'] = calc_dist
+        self.update()
+
+    def reset_home_view(self):
+        """Resets camera to isometric perspective and auto-zooms to coil."""
+        self.opts['elevation'] = 30
+        self.opts['azimuth'] = 150
+        self.auto_fit_view()
+
+    def set_view_preset(self, elevation, azimuth):
+        """Snaps camera to a flat view face (Top, Front, Right, Left, Back, Bottom)."""
+        self.opts['elevation'] = elevation
+        self.opts['azimuth'] = azimuth
+        self.auto_fit_view()
+
     def build_spool_meshes(self, spool_data):
+        self._current_flange_d = spool_data.get("flange_d", 90.0)
+        self._current_width = spool_data.get("width", 50.0)
+
         r_out = spool_data["r_out"]
         r_in = spool_data["r_in"]
         cols = spool_data["cols"]
