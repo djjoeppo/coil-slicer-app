@@ -9,15 +9,41 @@ from PySide6.QtGui import QVector3D, QPainter, QPolygonF, QColor, QPen, QBrush, 
 
 
 class FusionViewCubeWidget(QWidget):
-    """An interactive 3D ViewCube widget matching Fusion 360 with live 3D rotation, face labels, red X/blue Z axes, and home house icon."""
+    """An interactive 3D ViewCube widget matching Fusion 360 with live 3D rotation, face, edge and corner clicking, RGB axes, and home house icon."""
     def __init__(self, viewer):
         super().__init__(viewer)
         self.viewer = viewer
         self.setFixedSize(125, 125)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
         self.setMouseTracking(True)
-        self.hovered_face = None
+        self.hovered_target = None
         self.home_rect = QRectF(4, 4, 26, 26)
+
+        self.corners_3d = {
+            'FTR (Top-Front-Right)': ((1, 1, 1), (30, 45)),
+            'FTL (Top-Front-Left)': ((-1, 1, 1), (30, 135)),
+            'BTL (Top-Back-Left)': ((-1, -1, 1), (30, 225)),
+            'BTR (Top-Back-Right)': ((1, -1, 1), (30, 315)),
+            'FBR (Bot-Front-Right)': ((1, 1, -1), (-30, 45)),
+            'FBL (Bot-Front-Left)': ((-1, 1, -1), (-30, 135)),
+            'BBL (Bot-Back-Left)': ((-1, -1, -1), (-30, 225)),
+            'BBR (Bot-Back-Right)': ((1, -1, -1), (-30, 315))
+        }
+
+        self.edges_3d = {
+            'Top-Front Edge': ((0, 1, 1), (45, 90)),
+            'Top-Right Edge': ((1, 0, 1), (45, 0)),
+            'Top-Back Edge': ((0, -1, 1), (45, 270)),
+            'Top-Left Edge': ((-1, 0, 1), (45, 180)),
+            'Bot-Front Edge': ((0, 1, -1), (-45, 90)),
+            'Bot-Right Edge': ((1, 0, -1), (-45, 0)),
+            'Bot-Back Edge': ((0, -1, -1), (-45, 270)),
+            'Bot-Left Edge': ((-1, 0, -1), (-45, 180)),
+            'Front-Right Edge': ((1, 1, 0), (0, 45)),
+            'Front-Left Edge': ((-1, 1, 0), (0, 135)),
+            'Back-Right Edge': ((1, -1, 0), (0, 315)),
+            'Back-Left Edge': ((-1, -1, 0), (0, 225))
+        }
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -70,7 +96,20 @@ class FusionViewCubeWidget(QWidget):
         for k, (vx, vy, vz) in cube_verts_3d.items():
             proj_verts[k] = project(vx, vy, vz)
 
-        # Define 6 Faces with outward normal vectors & corner vertices in Top-Left, Top-Right, Bottom-Right, Bottom-Left order
+        # Save projected positions for hit testing
+        self.proj_corners = {}
+        for c_name, ((vx, vy, vz), angles) in self.corners_3d.items():
+            px, py, depth = project(vx, vy, vz)
+            if depth > -0.2:
+                self.proj_corners[c_name] = (px, py, angles)
+
+        self.proj_edges = {}
+        for e_name, ((vx, vy, vz), angles) in self.edges_3d.items():
+            px, py, depth = project(vx, vy, vz)
+            if depth > -0.2:
+                self.proj_edges[e_name] = (px, py, angles)
+
+        # Define 6 Faces
         faces = [
             ('TOP', ['BTL', 'BTR', 'FTR', 'FTL'], (0, 0, 1)),
             ('BOTTOM', ['FBL', 'FBR', 'BBR', 'BBL'], (0, 0, -1)),
@@ -80,7 +119,6 @@ class FusionViewCubeWidget(QWidget):
             ('LEFT', ['BTL', 'FTL', 'FBL', 'BBL'], (-1, 0, 0))
         ]
 
-        # Calculate face depth and normal dot product with camera vector
         visible_faces = []
         for name, v_keys, (nx, ny, nz) in faces:
             depth = nx * cam_x + ny * cam_y + nz * cam_z
@@ -115,21 +153,22 @@ class FusionViewCubeWidget(QWidget):
             QPointF(0, 120)
         ])
 
-        # 3. Draw Solid Opaque Cube Faces with True 3D Perspective Texture Mapping
+        # 3. Draw Solid Opaque Cube Faces
         self.face_polygons = {}
+        hovered_type = self.hovered_target[0] if self.hovered_target else None
+        hovered_name = self.hovered_target[1] if self.hovered_target else None
+
         for depth, name, v_keys in visible_faces:
             pts_2d = [QPointF(proj_verts[vk][0], proj_verts[vk][1]) for vk in v_keys]
             target_poly = QPolygonF(pts_2d)
             self.face_polygons[name] = target_poly
 
-            is_hover = (self.hovered_face == name)
-            face_img = get_face_texture(name, is_hover)
+            is_face_hover = (hovered_type == 'FACE' and hovered_name == name)
+            face_img = get_face_texture(name, is_face_hover)
 
             trans = QTransform()
             if len(pts_2d) == 4 and QTransform.quadToQuad(src_quad, target_poly, trans):
                 painter.save()
-
-                # Clip strictly to face polygon so text never bleeds over edges
                 clip_path = QPainterPath()
                 clip_path.addPolygon(target_poly)
                 painter.setClipPath(clip_path)
@@ -137,13 +176,21 @@ class FusionViewCubeWidget(QWidget):
                 painter.setTransform(trans, combine=True)
                 painter.drawImage(QRectF(0, 0, 120, 120), face_img)
                 painter.restore()
-            else:
-                # Fallback draw
-                painter.setBrush(QBrush(QColor(0, 126, 220) if is_hover else QColor(235, 238, 242)))
-                painter.setPen(QPen(QColor(40, 45, 50), 1.5))
-                painter.drawPolygon(target_poly)
 
-        # 4. Draw Red X, Green Y, Blue Z Axes in foreground
+        # 4. Highlight hovered Corner or Edge
+        if hovered_type == 'CORNER' and hovered_name in self.proj_corners:
+            px, py, _ = self.proj_corners[hovered_name]
+            painter.setBrush(QBrush(QColor(255, 152, 0, 230)))
+            painter.setPen(QPen(QColor(255, 255, 255), 1.5))
+            painter.drawEllipse(QPointF(px, py), 6, 6)
+
+        elif hovered_type == 'EDGE' and hovered_name in self.proj_edges:
+            px, py, _ = self.proj_edges[hovered_name]
+            painter.setBrush(QBrush(QColor(0, 210, 255, 230)))
+            painter.setPen(QPen(QColor(255, 255, 255), 1.5))
+            painter.drawEllipse(QPointF(px, py), 5, 5)
+
+        # 5. Draw Red X, Green Y, Blue Z Axes in foreground
         ox, oy, _ = project(-1, -1, -1)
         xx, xy, _ = project(1.3, -1, -1)
         yx, yy, _ = project(-1, 1.3, -1)
@@ -167,7 +214,7 @@ class FusionViewCubeWidget(QWidget):
         painter.drawText(int(zx) - 8, int(zy) - 2, "Z")
 
     def _draw_home_icon(self, painter):
-        is_home_hover = (self.hovered_face == 'HOME')
+        is_home_hover = (self.hovered_target and self.hovered_target[0] == 'HOME')
         pen = QPen(QColor(0, 126, 220) if is_home_hover else QColor(170, 175, 180), 2)
         painter.setPen(pen)
         painter.setBrush(Qt.NoBrush)
@@ -184,41 +231,58 @@ class FusionViewCubeWidget(QWidget):
 
     def mouseMoveEvent(self, event):
         pos = event.position()
-        old_hover = self.hovered_face
-        self.hovered_face = None
+        old_hover = self.hovered_target
+        self.hovered_target = None
 
         if self.home_rect.contains(pos):
-            self.hovered_face = 'HOME'
-        elif hasattr(self, 'face_polygons'):
-            for name, poly in self.face_polygons.items():
-                if poly.containsPoint(pos, Qt.OddEvenFill):
-                    self.hovered_face = name
-                    break
+            self.hovered_target = ('HOME', None)
+        else:
+            if hasattr(self, 'proj_corners'):
+                for c_name, (px, py, angles) in self.proj_corners.items():
+                    dist = math.hypot(pos.x() - px, pos.y() - py)
+                    if dist <= 9.0:
+                        self.hovered_target = ('CORNER', c_name, angles)
+                        break
 
-        if old_hover != self.hovered_face:
+            if not self.hovered_target and hasattr(self, 'proj_edges'):
+                for e_name, (px, py, angles) in self.proj_edges.items():
+                    dist = math.hypot(pos.x() - px, pos.y() - py)
+                    if dist <= 8.0:
+                        self.hovered_target = ('EDGE', e_name, angles)
+                        break
+
+            if not self.hovered_target and hasattr(self, 'face_polygons'):
+                for name, poly in self.face_polygons.items():
+                    if poly.containsPoint(pos, Qt.OddEvenFill):
+                        self.hovered_target = ('FACE', name)
+                        break
+
+        if old_hover != self.hovered_target:
             self.update()
 
     def mousePressEvent(self, event):
-        pos = event.position()
-        if self.home_rect.contains(pos):
-            self.viewer.reset_home_view()
+        if not self.hovered_target:
             return
 
-        if hasattr(self, 'face_polygons'):
-            for name, poly in self.face_polygons.items():
-                if poly.containsPoint(pos, Qt.OddEvenFill):
-                    presets = {
-                        'TOP': (90, 0),
-                        'BOTTOM': (-90, 0),
-                        'FRONT': (0, 90),
-                        'BACK': (0, 270),
-                        'RIGHT': (0, 0),
-                        'LEFT': (0, 180)
-                    }
-                    if name in presets:
-                        elev, azim = presets[name]
-                        self.viewer.set_view_preset(elev, azim)
-                    break
+        target_type = self.hovered_target[0]
+        if target_type == 'HOME':
+            self.viewer.reset_home_view()
+        elif target_type in ('CORNER', 'EDGE'):
+            elev, azim = self.hovered_target[2]
+            self.viewer.set_view_preset(elev, azim)
+        elif target_type == 'FACE':
+            name = self.hovered_target[1]
+            presets = {
+                'TOP': (90, 0),
+                'BOTTOM': (-90, 0),
+                'FRONT': (0, 90),
+                'BACK': (0, 270),
+                'RIGHT': (0, 0),
+                'LEFT': (0, 180)
+            }
+            if name in presets:
+                elev, azim = presets[name]
+                self.viewer.set_view_preset(elev, azim)
 
 class CustomGLMeshItem(gl.GLMeshItem):
     """Een geavanceerde mesh die echte OpenGL glans (specular) ondersteunt
