@@ -4,8 +4,8 @@ import numpy as np
 import pyqtgraph.opengl as gl
 from OpenGL import GL  # Importeer ruwe OpenGL functies voor de glans
 from PySide6.QtWidgets import QWidget, QFrame, QVBoxLayout, QGridLayout, QPushButton, QLabel
-from PySide6.QtCore import Qt, QPoint, QRectF
-from PySide6.QtGui import QVector3D, QPainter, QPolygonF, QColor, QPen, QBrush, QFont, QPainterPath
+from PySide6.QtCore import Qt, QPoint, QPointF, QRectF
+from PySide6.QtGui import QVector3D, QPainter, QPolygonF, QColor, QPen, QBrush, QFont, QPainterPath, QTransform
 
 
 class FusionViewCubeWidget(QWidget):
