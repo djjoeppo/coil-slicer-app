@@ -28,13 +28,35 @@ class FusionViewCubeWidget(QWidget):
 
         # 2. Get camera orientation
         elev = self.viewer.opts.get('elevation', 30)
-        azim = self.viewer.opts.get('azimuth', 150)
+        azim = self.viewer.opts.get('azimuth', 45)
 
         e_rad = math.radians(elev)
         a_rad = math.radians(azim)
 
         cx, cy = 62, 65
         scale = 26.0
+
+        # Camera view vectors
+        cam_x = math.cos(e_rad) * math.cos(a_rad)
+        cam_y = math.cos(e_rad) * math.sin(a_rad)
+        cam_z = math.sin(e_rad)
+
+        v_right_x = math.sin(a_rad)
+        v_right_y = -math.cos(a_rad)
+        v_right_z = 0.0
+
+        v_up_x = -math.sin(e_rad) * math.cos(a_rad)
+        v_up_y = -math.sin(e_rad) * math.sin(a_rad)
+        v_up_z = math.cos(e_rad)
+
+        def project(vx, vy, vz):
+            sx = vx * v_right_x + vy * v_right_y + vz * v_right_z
+            sy = vx * v_up_x + vy * v_up_y + vz * v_up_z
+            depth = vx * cam_x + vy * cam_y + vz * cam_z
+
+            px = cx + sx * scale
+            py = cy - sy * scale
+            return px, py, depth
 
         # Define 8 Cube Vertices (-1..1)
         cube_verts_3d = {
@@ -43,19 +65,6 @@ class FusionViewCubeWidget(QWidget):
             'BTL': (-1, -1, 1),  'BTR': (1, -1, 1),
             'BBL': (-1, -1, -1), 'BBR': (1, -1, -1)
         }
-
-        def project(x, y, z):
-            x1 = x * math.cos(-a_rad) - y * math.sin(-a_rad)
-            y1 = x * math.sin(-a_rad) + y * math.cos(-a_rad)
-            z1 = z
-
-            x2 = x1
-            y2 = y1 * math.cos(-e_rad) - z1 * math.sin(-e_rad)
-            z2 = y1 * math.sin(-e_rad) + z1 * math.cos(-e_rad)
-
-            px = cx + x2 * scale
-            py = cy - z2 * scale
-            return px, py, y2
 
         proj_verts = {}
         for k, (vx, vy, vz) in cube_verts_3d.items():
@@ -71,25 +80,38 @@ class FusionViewCubeWidget(QWidget):
             ('LEFT', ['FTL', 'BTL', 'BBL', 'FBL'], (-1, 0, 0))
         ]
 
-        # Calculate transformed face depth & normal direction
+        # Calculate face depth and normal dot product with camera vector
         visible_faces = []
         for name, v_keys, (nx, ny, nz) in faces:
-            nx1 = nx * math.cos(-a_rad) - ny * math.sin(-a_rad)
-            ny1 = nx * math.sin(-a_rad) + ny * math.cos(-a_rad)
-            nz1 = nz
-
-            nx2 = nx1
-            ny2 = ny1 * math.cos(-e_rad) - nz1 * math.sin(-e_rad)
-            nz2 = ny1 * math.sin(-e_rad) + nz1 * math.cos(-e_rad)
-
-            avg_depth = sum(proj_verts[vk][2] for vk in v_keys) / 4.0
-
-            if ny2 < 0.05:
+            depth = nx * cam_x + ny * cam_y + nz * cam_z
+            if depth > 0.01:
+                avg_depth = sum(proj_verts[vk][2] for vk in v_keys) / 4.0
                 visible_faces.append((avg_depth, name, v_keys))
 
         visible_faces.sort(key=lambda item: item[0])
 
-        # 3. Draw Red X, Green Y, Blue Z Axes from BBL (-1, -1, -1)
+        # 3. Draw Solid Opaque Cube Faces
+        self.face_polygons = {}
+        for depth, name, v_keys in visible_faces:
+            poly = QPolygonF([QPoint(int(proj_verts[vk][0]), int(proj_verts[vk][1])) for vk in v_keys])
+            self.face_polygons[name] = poly
+
+            is_hover = (self.hovered_face == name)
+            bg_color = QColor(0, 126, 220, 255) if is_hover else QColor(235, 238, 242, 255)
+            painter.setBrush(QBrush(bg_color))
+            painter.setPen(QPen(QColor(40, 45, 50), 1.5))
+            painter.drawPolygon(poly)
+
+            # Draw Face Label Fixed On Cube Face Center
+            center_px = sum(proj_verts[vk][0] for vk in v_keys) / 4.0
+            center_py = sum(proj_verts[vk][1] for vk in v_keys) / 4.0
+
+            painter.setPen(QPen(QColor(255, 255, 255) if is_hover else QColor(20, 25, 30)))
+            painter.setFont(QFont("Segoe UI", 7, QFont.Bold))
+            rect = QRectF(center_px - 20, center_py - 10, 40, 20)
+            painter.drawText(rect, Qt.AlignCenter, name)
+
+        # 4. Draw Red X, Green Y, Blue Z Axes in foreground
         ox, oy, _ = project(-1, -1, -1)
         xx, xy, _ = project(1.3, -1, -1)
         yx, yy, _ = project(-1, 1.3, -1)
@@ -111,28 +133,6 @@ class FusionViewCubeWidget(QWidget):
         painter.setPen(QPen(QColor(60, 130, 255), 2))
         painter.drawLine(int(ox), int(oy), int(zx), int(zy))
         painter.drawText(int(zx) - 8, int(zy) - 2, "Z")
-
-        # 4. Draw Solid Opaque Cube Faces
-        self.face_polygons = {}
-        for depth, name, v_keys in visible_faces:
-            poly = QPolygonF([QPoint(int(proj_verts[vk][0]), int(proj_verts[vk][1])) for vk in v_keys])
-            self.face_polygons[name] = poly
-
-            is_hover = (self.hovered_face == name)
-            # Solid Opaque Color (255 Alpha)
-            bg_color = QColor(0, 126, 220, 255) if is_hover else QColor(235, 238, 242, 255)
-            painter.setBrush(QBrush(bg_color))
-            painter.setPen(QPen(QColor(40, 45, 50), 1.5))
-            painter.drawPolygon(poly)
-
-            # Draw Face Label Fixed On Cube Face Center
-            center_px = sum(proj_verts[vk][0] for vk in v_keys) / 4.0
-            center_py = sum(proj_verts[vk][1] for vk in v_keys) / 4.0
-
-            painter.setPen(QPen(QColor(255, 255, 255) if is_hover else QColor(20, 25, 30)))
-            painter.setFont(QFont("Segoe UI", 7, QFont.Bold))
-            rect = QRectF(center_px - 22, center_py - 10, 44, 20)
-            painter.drawText(rect, Qt.AlignCenter, name)
 
     def _draw_home_icon(self, painter):
         is_home_hover = (self.hovered_face == 'HOME')
@@ -250,7 +250,7 @@ class Coil3DViewer(gl.GLViewWidget):
     def __init__(self):
         super().__init__()
         self.setBackgroundColor("#111111")
-        self.opts.update({"distance": 250, "elevation": 30, "azimuth": 150})
+        self.opts.update({"distance": 250, "elevation": 30, "azimuth": 45})
 
         self._current_flange_d = 90.0
         self._current_width = 50.0
@@ -330,7 +330,7 @@ class Coil3DViewer(gl.GLViewWidget):
     def reset_home_view(self):
         """Resets camera to isometric perspective and auto-zooms to coil."""
         self.opts['elevation'] = 30
-        self.opts['azimuth'] = 150
+        self.opts['azimuth'] = 45
         self.auto_fit_view()
 
     def set_view_preset(self, elevation, azimuth):
