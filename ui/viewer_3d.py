@@ -5,7 +5,7 @@ import pyqtgraph.opengl as gl
 from OpenGL import GL  # Importeer ruwe OpenGL functies voor de glans
 from PySide6.QtWidgets import QWidget, QFrame, QVBoxLayout, QGridLayout, QPushButton, QLabel
 from PySide6.QtCore import Qt, QPoint, QPointF, QRectF
-from PySide6.QtGui import QVector3D, QPainter, QPolygonF, QColor, QPen, QBrush, QFont, QPainterPath, QTransform
+from PySide6.QtGui import QVector3D, QPainter, QPolygonF, QColor, QPen, QBrush, QFont, QPainterPath, QTransform, QImage
 
 
 class FusionViewCubeWidget(QWidget):
@@ -70,14 +70,14 @@ class FusionViewCubeWidget(QWidget):
         for k, (vx, vy, vz) in cube_verts_3d.items():
             proj_verts[k] = project(vx, vy, vz)
 
-        # Define 6 Faces with outward normal vectors
+        # Define 6 Faces with outward normal vectors & corner vertices in Top-Left, Top-Right, Bottom-Right, Bottom-Left order
         faces = [
-            ('TOP', ['FTL', 'FTR', 'BTR', 'BTL'], (0, 0, 1)),
+            ('TOP', ['BTL', 'BTR', 'FTR', 'FTL'], (0, 0, 1)),
             ('BOTTOM', ['FBL', 'FBR', 'BBR', 'BBL'], (0, 0, -1)),
             ('FRONT', ['FTL', 'FTR', 'FBR', 'FBL'], (0, 1, 0)),
-            ('BACK', ['BTL', 'BTR', 'BBR', 'BBL'], (0, -1, 0)),
+            ('BACK', ['BTR', 'BTL', 'BBL', 'BBR'], (0, -1, 0)),
             ('RIGHT', ['FTR', 'BTR', 'BBR', 'FBR'], (1, 0, 0)),
-            ('LEFT', ['FTL', 'BTL', 'BBL', 'FBL'], (-1, 0, 0))
+            ('LEFT', ['BTL', 'FTL', 'FBL', 'BBL'], (-1, 0, 0))
         ]
 
         # Calculate face depth and normal dot product with camera vector
@@ -90,26 +90,58 @@ class FusionViewCubeWidget(QWidget):
 
         visible_faces.sort(key=lambda item: item[0])
 
-        # 3. Draw Solid Opaque Cube Faces
+        # Pre-render face texture image
+        def get_face_texture(text, is_hover=False):
+            img = QImage(120, 120, QImage.Format_ARGB32)
+            img.fill(Qt.transparent)
+            p = QPainter(img)
+            p.setRenderHint(QPainter.Antialiasing)
+
+            bg_color = QColor(0, 126, 220) if is_hover else QColor(235, 238, 242)
+            p.setBrush(QBrush(bg_color))
+            p.setPen(QPen(QColor(50, 55, 60), 4))
+            p.drawRect(2, 2, 116, 116)
+
+            p.setPen(QPen(QColor(255, 255, 255) if is_hover else QColor(20, 25, 30)))
+            p.setFont(QFont("Segoe UI", 16, QFont.Bold))
+            p.drawText(QRectF(0, 0, 120, 120), Qt.AlignCenter, text)
+            p.end()
+            return img
+
+        src_quad = QPolygonF([
+            QPointF(0, 0),
+            QPointF(120, 0),
+            QPointF(120, 120),
+            QPointF(0, 120)
+        ])
+
+        # 3. Draw Solid Opaque Cube Faces with True 3D Perspective Texture Mapping
         self.face_polygons = {}
         for depth, name, v_keys in visible_faces:
-            poly = QPolygonF([QPoint(int(proj_verts[vk][0]), int(proj_verts[vk][1])) for vk in v_keys])
-            self.face_polygons[name] = poly
+            pts_2d = [QPointF(proj_verts[vk][0], proj_verts[vk][1]) for vk in v_keys]
+            target_poly = QPolygonF(pts_2d)
+            self.face_polygons[name] = target_poly
 
             is_hover = (self.hovered_face == name)
-            bg_color = QColor(0, 126, 220, 255) if is_hover else QColor(235, 238, 242, 255)
-            painter.setBrush(QBrush(bg_color))
-            painter.setPen(QPen(QColor(40, 45, 50), 1.5))
-            painter.drawPolygon(poly)
+            face_img = get_face_texture(name, is_hover)
 
-            # Draw Face Label Fixed On Cube Face Center
-            center_px = sum(proj_verts[vk][0] for vk in v_keys) / 4.0
-            center_py = sum(proj_verts[vk][1] for vk in v_keys) / 4.0
+            trans = QTransform()
+            if len(pts_2d) == 4 and QTransform.quadToQuad(src_quad, target_poly, trans):
+                painter.save()
 
-            painter.setPen(QPen(QColor(255, 255, 255) if is_hover else QColor(20, 25, 30)))
-            painter.setFont(QFont("Segoe UI", 7, QFont.Bold))
-            rect = QRectF(center_px - 20, center_py - 10, 40, 20)
-            painter.drawText(rect, Qt.AlignCenter, name)
+                # Clip strictly to face polygon so text never bleeds over edges
+                clip_path = QPainterPath()
+                clip_path.addPolygon(target_poly)
+                painter.setClipPath(clip_path)
+
+                painter.setTransform(trans, combine=True)
+                painter.drawImage(QRectF(0, 0, 120, 120), face_img)
+                painter.restore()
+            else:
+                # Fallback draw
+                painter.setBrush(QBrush(QColor(0, 126, 220) if is_hover else QColor(235, 238, 242)))
+                painter.setPen(QPen(QColor(40, 45, 50), 1.5))
+                painter.drawPolygon(target_poly)
 
         # 4. Draw Red X, Green Y, Blue Z Axes in foreground
         ox, oy, _ = project(-1, -1, -1)
