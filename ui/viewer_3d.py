@@ -89,38 +89,47 @@ class FusionViewCubeWidget(QWidget):
 
         visible_faces.sort(key=lambda item: item[0])
 
-        # 3. Draw Red X and Blue Z Axes
+        # 3. Draw Red X, Green Y, Blue Z Axes from BBL (-1, -1, -1)
         ox, oy, _ = project(-1, -1, -1)
-        xx, xy, _ = project(1.2, -1, -1)
-        zx, zy, _ = project(-1, -1, 1.2)
+        xx, xy, _ = project(1.3, -1, -1)
+        yx, yy, _ = project(-1, 1.3, -1)
+        zx, zy, _ = project(-1, -1, 1.3)
 
-        pen_x = QPen(QColor(255, 60, 60), 2)
-        painter.setPen(pen_x)
-        painter.drawLine(int(ox), int(oy), int(xx), int(xy))
         painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
+
+        # Red X Axis
+        painter.setPen(QPen(QColor(255, 60, 60), 2))
+        painter.drawLine(int(ox), int(oy), int(xx), int(xy))
         painter.drawText(int(xx) + 2, int(xy) + 4, "X")
 
-        pen_z = QPen(QColor(60, 130, 255), 2)
-        painter.setPen(pen_z)
+        # Green Y Axis
+        painter.setPen(QPen(QColor(40, 200, 80), 2))
+        painter.drawLine(int(ox), int(oy), int(yx), int(yy))
+        painter.drawText(int(yx) + 2, int(yy) - 2, "Y")
+
+        # Blue Z Axis
+        painter.setPen(QPen(QColor(60, 130, 255), 2))
         painter.drawLine(int(ox), int(oy), int(zx), int(zy))
         painter.drawText(int(zx) - 8, int(zy) - 2, "Z")
 
-        # 4. Draw Cube Faces
+        # 4. Draw Solid Opaque Cube Faces
         self.face_polygons = {}
         for depth, name, v_keys in visible_faces:
             poly = QPolygonF([QPoint(int(proj_verts[vk][0]), int(proj_verts[vk][1])) for vk in v_keys])
             self.face_polygons[name] = poly
 
             is_hover = (self.hovered_face == name)
-            bg_color = QColor(0, 126, 220, 220) if is_hover else QColor(225, 228, 232, 235)
+            # Solid Opaque Color (255 Alpha)
+            bg_color = QColor(0, 126, 220, 255) if is_hover else QColor(235, 238, 242, 255)
             painter.setBrush(QBrush(bg_color))
-            painter.setPen(QPen(QColor(50, 55, 60), 1.5))
+            painter.setPen(QPen(QColor(40, 45, 50), 1.5))
             painter.drawPolygon(poly)
 
+            # Draw Face Label Fixed On Cube Face Center
             center_px = sum(proj_verts[vk][0] for vk in v_keys) / 4.0
             center_py = sum(proj_verts[vk][1] for vk in v_keys) / 4.0
 
-            painter.setPen(QPen(QColor(255, 255, 255) if is_hover else QColor(30, 35, 40)))
+            painter.setPen(QPen(QColor(255, 255, 255) if is_hover else QColor(20, 25, 30)))
             painter.setFont(QFont("Segoe UI", 7, QFont.Bold))
             rect = QRectF(center_px - 22, center_py - 10, 44, 20)
             painter.drawText(rect, Qt.AlignCenter, name)
