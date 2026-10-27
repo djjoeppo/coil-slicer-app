@@ -47,6 +47,17 @@ class SettingsTab(QWidget):
         self.combo_units.setFixedWidth(120)
         self.combo_units.currentTextChanged.connect(self.main_window.change_units)
 
+        self.lbl_highlight = QLabel("G-Code Markering:")
+        self.combo_highlight = QComboBox()
+        self.combo_highlight.addItems(["Verbeterd (Industrieel)", "Standaard (Geen)"])
+        self.combo_highlight.setFixedWidth(160)
+        saved_mode = self.main_window.user_config.get("highlight_mode", "Verbeterd")
+        if "Standaard" in saved_mode:
+            self.combo_highlight.setCurrentIndex(1)
+        else:
+            self.combo_highlight.setCurrentIndex(0)
+        self.combo_highlight.currentTextChanged.connect(self.on_highlight_changed)
+
         self.btn_materials = QPushButton("Materialenbeheer")
         self.btn_materials.setObjectName("secondaryActionButton")
         self.btn_materials.clicked.connect(self.open_materials_manager)
@@ -57,6 +68,7 @@ class SettingsTab(QWidget):
         lay_card_viewer.addWidget(self.create_dropdown_row(self.combo_theme, self.lbl_theme))
         lay_card_viewer.addWidget(self.create_dropdown_row(self.combo_lang, self.lbl_lang))
         lay_card_viewer.addWidget(self.create_dropdown_row(self.combo_units, self.lbl_units))
+        lay_card_viewer.addWidget(self.create_dropdown_row(self.combo_highlight, self.lbl_highlight))
         lay_card_viewer.addWidget(self.btn_materials)
         
         lay_page_settings.addWidget(card_viewer, 0, Qt.AlignHCenter | Qt.AlignTop)
@@ -78,6 +90,13 @@ class SettingsTab(QWidget):
         label.setObjectName("formLabel")
         lay.addWidget(label); lay.addStretch(); lay.addWidget(combo)
         return row
+
+    def on_highlight_changed(self, text):
+        mode = "Verbeterd" if "Verbeterd" in text else "Standaard"
+        self.main_window.user_config["highlight_mode"] = mode
+        self.main_window.persist_config()
+        if hasattr(self.main_window, 'update_gcode_highlighters'):
+            self.main_window.update_gcode_highlighters()
 
     def open_materials_manager(self):
         from ui.dialogs import MaterialsPopUp
