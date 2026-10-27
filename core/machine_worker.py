@@ -37,19 +37,6 @@ class MachineWorker(QObject):
             self._ser = serial.Serial(port=port, baudrate=baud, timeout=timeout, write_timeout=timeout)
             self._ser.reset_input_buffer()
 
-            ready = False
-            for _ in range(250):
-                line = self._readline()
-                if line:
-                    self.line_received.emit(line)
-                if "READY" in line.upper():
-                    ready = True
-                    break
-
-            if not ready:
-                # Some ESP32 might not send READY, but we can try to continue
-                pass
-
             self._poll_timer.start()
             self.connected.emit(f"connected ({port})")
 
@@ -85,7 +72,12 @@ class MachineWorker(QObject):
     def start_streaming(self, lines: list[str]):
         if not self.is_connected():
             return
-        self._send_queue = [l.strip() for l in lines if l.strip()]
+        cleaned_lines = []
+        for l in lines:
+            clean_l = l.split(';')[0].strip()
+            if clean_l:
+                cleaned_lines.append(clean_l)
+        self._send_queue = cleaned_lines
         self._total_lines = len(self._send_queue)
         self._sent_lines = 0
         self._is_sending = True
@@ -99,10 +91,10 @@ class MachineWorker(QObject):
             
         line = self._send_queue.pop(0)
         try:
-            full_line = line + "\n"
+            full_line = line + "\r\n"
             self._ser.write(full_line.encode("utf-8"))
             self._sent_lines += 1
-            progress = int((self._sent_lines / self._total_lines) * 100)
+            progress = int((self._sent_lines / self._total_lines) * 100) if self._total_lines > 0 else 100
             self.progress_updated.emit(progress)
             self.line_received.emit(f">> {line}")
         except Exception as e:
@@ -113,8 +105,10 @@ class MachineWorker(QObject):
     def send_single_line(self, line: str):
         if not self.is_connected(): return
         try:
-            if not line.endswith("\n"): line += "\n"
-            self._ser.write(line.encode("utf-8"))
+            clean_line = line.split(';')[0].strip()
+            if not clean_line: return
+            full_line = clean_line + "\r\n"
+            self._ser.write(full_line.encode("utf-8"))
         except Exception as e:
             self.line_received.emit(f"ERR,WRITE,{e!s}")
 

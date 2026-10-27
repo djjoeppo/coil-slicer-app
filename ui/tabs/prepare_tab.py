@@ -161,6 +161,7 @@ class PrepareTab(QWidget):
         self.splitter.addWidget(sidebar_container)
         self.splitter.addWidget(self.viewer)
         self.splitter.setStretchFactor(1, 1) # Viewer should grow
+        self.splitter.setSizes([320, 1100])
 
     def create_form_row(self, widget_right, text_label):
         row = QWidget(); lay = QHBoxLayout(row)

@@ -185,6 +185,8 @@ class CoilController:
                 spool_data = CoilMathEngine.calculate_spool_geometry(v['hole'], v['i'], v['f'], v['b'])
                 self.viewer.build_spool_meshes(spool_data)
                 self.preview_viewer.build_spool_meshes(spool_data)
+                self.viewer.auto_fit_view()
+                self.preview_viewer.auto_fit_view()
                 self.last_spool_cache = spool_key
 
             if self.last_wire_cache is None or self.last_wire_cache['key'] != wire_key:
@@ -219,6 +221,8 @@ class CoilController:
 
         self.viewer.render_wire_meshes(result['full_meshes'])
         self.apply_visuals()
+        self.viewer.auto_fit_view()
+        self.preview_viewer.auto_fit_view()
 
         # Reset simulation on new calculation
         self.tab_preview.slider.setValue(1000)
@@ -259,6 +263,10 @@ class CoilController:
             spool_offset = float(self.tab_preview.input_spool_offset.text())
             y_offset = float(self.tab_preview.input_y_offset.text())
             feedrate = float(self.tab_preview.input_feedrate.text())
+            wrap_feedrate = float(self.tab_preview.input_wrap_feedrate.text())
+            dwell_time = float(self.tab_preview.input_dwell_time.text())
+            pause_on_turn = self.tab_preview.chk_pause_turnaround.isChecked()
+            compress_gcode = self.tab_preview.chk_compress_gcode.isChecked()
 
             # Validation
             pts = self.last_wire_cache['pts_list'][0]
@@ -289,11 +297,16 @@ class CoilController:
             gcode = self.gcode_engine.generate(
                 self.last_wire_cache['pts_list'],
                 self.last_wire_cache['angles_list'],
+                wire_d=self.last_wire_cache['params']['w'],
                 nozzle_y_offset=y_offset,
                 wire_offset=wire_offset,
                 spool_offset=spool_offset,
                 z_force=z_force,
                 feedrate=feedrate,
+                wrap_feedrate=wrap_feedrate,
+                dwell_time=dwell_time,
+                pause_on_turn=pause_on_turn,
+                compress_gcode=compress_gcode,
                 units=self.gcode_engine.units,
                 max_x=self.machine_limits["max_x"]
             )

@@ -10,8 +10,10 @@ from core.controller import CoilController
 class CoilAppLayout(QWidget):
     def __init__(self):
         super().__init__()
-        self.current_lang = "NL"
-        self.current_theme = "dark"
+        from core.config import load_user_config
+        self.user_config = load_user_config()
+        self.current_lang = self.user_config.get("lang", "NL")
+        self.current_theme = self.user_config.get("theme", "dark")
         self.nav_buttons = []
         
         # UI must be initialized before Controller
@@ -65,6 +67,34 @@ class CoilAppLayout(QWidget):
         self.switch_main_page(0)
         self.update_ui_text()
         self.apply_orca_theme()
+        self.update_gcode_highlighters()
+
+    def update_gcode_highlighters(self):
+        from ui.components import GCodeHighlighter
+        mode = self.user_config.get("highlight_mode", "Verbeterd")
+        enable = ("Verbeterd" in mode)
+
+        if hasattr(self, 'tab_preview') and hasattr(self.tab_preview, 'gcode_display'):
+            if enable:
+                if not hasattr(self.tab_preview, 'highlighter') or self.tab_preview.highlighter is None:
+                    self.tab_preview.highlighter = GCodeHighlighter(self.tab_preview.gcode_display.document())
+            else:
+                if hasattr(self.tab_preview, 'highlighter') and self.tab_preview.highlighter:
+                    self.tab_preview.highlighter.setDocument(None)
+                    self.tab_preview.highlighter = None
+
+        if hasattr(self, 'tab_device') and hasattr(self.tab_device, 'terminal'):
+            if enable:
+                if not hasattr(self.tab_device, 'highlighter') or self.tab_device.highlighter is None:
+                    self.tab_device.highlighter = GCodeHighlighter(self.tab_device.terminal.document())
+            else:
+                if hasattr(self.tab_device, 'highlighter') and self.tab_device.highlighter:
+                    self.tab_device.highlighter.setDocument(None)
+                    self.tab_device.highlighter = None
+
+    def persist_config(self):
+        from core.config import save_user_config
+        save_user_config(self.user_config)
 
     def switch_main_page(self, index):
         self.main_pages.setCurrentIndex(index)
@@ -72,11 +102,14 @@ class CoilAppLayout(QWidget):
             btn.setChecked(i == index)
 
     def change_language(self, text):
-        self.current_lang = "NL" if text == "Nederlands" else "EN"
+        self.current_lang = "NL" if text in ["Nederlands", "NL"] else "EN"
+        self.user_config["lang"] = self.current_lang
+        self.persist_config()
         self.update_ui_text()
 
     def change_units(self, unit_text):
-        # Notify the prepare tab to update unit displays
+        self.user_config["units"] = unit_text
+        self.persist_config()
         if hasattr(self, 'tab_prepare'):
             self.tab_prepare.on_unit_changed(unit_text)
 

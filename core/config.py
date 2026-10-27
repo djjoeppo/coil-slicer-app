@@ -41,6 +41,38 @@ TRANSLATIONS = load_json("languages.json")
 MACHINE_SETTINGS = load_json("machine_settings.json")
 MATERIALS = load_json("materials.json")
 
+USER_CONFIG_FILE = "user_config.json"
+
+DEFAULT_USER_CONFIG = {
+    "lang": "NL",
+    "units": "mm",
+    "theme": "dark",
+    "highlight_mode": "Verbeterd",
+    "last_port": "",
+    "last_baud": 115200
+}
+
+def load_user_config():
+    path = get_resource_path(USER_CONFIG_FILE)
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+                merged = DEFAULT_USER_CONFIG.copy()
+                merged.update(cfg)
+                return merged
+        except Exception as e:
+            print(f"Error loading user_config.json: {e}")
+    return DEFAULT_USER_CONFIG.copy()
+
+def save_user_config(config_dict):
+    path = get_resource_path(USER_CONFIG_FILE)
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(config_dict, f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        print(f"Error saving user_config.json: {e}")
+
 # Helpers for Fractions, AWG, and Units conversions
 def parse_fraction_or_float(val_str):
     """Parses standard decimals, fractions (1/8, 1/32) and mixed numbers (1 1/4) into float."""
